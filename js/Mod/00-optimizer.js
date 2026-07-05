@@ -6,8 +6,7 @@
 // 1. 補跑守護 — state.ff 期間跳過非關鍵計時器
 // 2. renderStatusEffects 節流 — 每秒執行（原本每 tick）
 // 3. renderDebuffPanel 節流 — 每秒執行（原本每 tick）
-// 4. renderMapModPanel 節流 — 每秒執行（原本每秒 setInterval）
-// 5. Wrapper 鏈偵測 — 偵測其他模組的 wrapper 衝突
+// 4. Wrapper 鏈偵測 — 偵測其他模組的 wrapper 衝突
 // 工具函數（$、$$、renderBatch、showBattleView 等）已移至 js/00-utils.js
 (function () {
   'use strict';
@@ -118,17 +117,7 @@
       });
     }
 
-    // ========================================================================
-    // 7. Wrapper: renderMapModPanel（節流：每秒執行）
-    // ========================================================================
-    if (typeof window.renderMapModPanel === 'function') {
-      window.renderMapModPanel = _wrap('renderMapModPanel', window.renderMapModPanel, function (orig) {
-        return function () {
-          if (state.ticks % 10 !== 0) return;
-          return orig.apply(this, arguments);
-        };
-      });
-    }
+    // renderMapModPanel 不做節流 — 由 22-map-modifiers.js 的 setInterval 每秒控制
 
     // ========================================================================
     // 8. Wrapper: renderMorphSnapshot（補跑守護）

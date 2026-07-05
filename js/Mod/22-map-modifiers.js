@@ -360,6 +360,7 @@ function renderMapModPanel() {
 
 function onToggleMapMod(el) {
     player.mapModOn = el.checked;
+    renderMapModPanel();
 }
 
 // ===== 負面狀態面板 =====
