@@ -1,0 +1,144 @@
+/* ===== ✨ 戰鬥特效增強模組 CSS ===== */
+/* 覆蓋原版 brightness 降低白色閃爍 + 新增斬擊/粒子/暴擊/重擊特效 */
+
+/* --- 覆蓋原版 hitNormal brightness（1.5→1.25） --- */
+.anim-hit-normal {
+    animation: hitNormalEnh 0.12s ease-out !important;
+}
+@keyframes hitNormalEnh {
+    0%, 100% { transform: translateX(0); filter: brightness(1); }
+    25%, 75% { transform: translateX(-4px); filter: brightness(1.25); }
+    50% { transform: translateX(4px); filter: brightness(1.25); }
+}
+
+/* --- 1. 斜線斬擊 --- */
+.vfx-enh-slash {
+    position: absolute;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.8) 40%, rgba(255,255,255,0.9) 50%, rgba(255,255,255,0.8) 60%, transparent 100%);
+    border-radius: 2px;
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 10;
+}
+@keyframes vfxEnhSlash {
+    0%   { transform: translate(-50%,-50%) rotate(-45deg) scaleX(0.4); opacity: 0.9; }
+    40%  { transform: translate(-50%,-50%) rotate(-45deg) scaleX(1.15); opacity: 1; }
+    100% { transform: translate(-50%,-50%) rotate(-45deg) scaleX(1.3); opacity: 0; }
+}
+
+/* --- 2. 元素粒子基礎 --- */
+.vfx-enh-particle {
+    position: absolute;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 10;
+}
+
+/* 火：橢圓碎屑，帶微小旋轉 */
+.vfx-enh-p-fire {
+    border-radius: 40% 60% 50% 50%;
+    animation: vfxEnhPartFire 0.15s ease-out;
+}
+@keyframes vfxEnhPartFire {
+    0%   { transform: translate(-50%,-50%) scale(1) rotate(0deg); }
+    100% { transform: translate(-50%,-50%) scale(0.3) rotate(60deg); }
+}
+
+/* 水：水滴狀，垂直橢圓 */
+.vfx-enh-p-water {
+    border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
+    animation: vfxEnhPartWater 0.15s ease-out;
+}
+@keyframes vfxEnhPartWater {
+    0%   { transform: translate(-50%,-50%) scale(1); }
+    100% { transform: translate(-50%,-50%) scale(0.2) translateY(6px); }
+}
+
+/* 風：細長條，水平飛散 */
+.vfx-enh-p-wind {
+    border-radius: 2px;
+    width: auto !important;
+    height: 2px !important;
+    min-width: 6px;
+    animation: vfxEnhPartWind 0.12s ease-out;
+}
+@keyframes vfxEnhPartWind {
+    0%   { transform: translate(-50%,-50%) scaleX(0.5); opacity: 1; }
+    100% { transform: translate(-50%,-50%) scaleX(1.8); opacity: 0; }
+}
+
+/* 地：小方塊碎片 */
+.vfx-enh-p-earth {
+    border-radius: 2px;
+    animation: vfxEnhPartEarth 0.18s ease-in;
+}
+@keyframes vfxEnhPartEarth {
+    0%   { transform: translate(-50%,-50%) scale(1) rotate(0deg); }
+    100% { transform: translate(-50%,-50%) scale(0.2) rotate(90deg) translateY(8px); }
+}
+
+/* 魔法：圓形光點，旋轉擴散 */
+.vfx-enh-p-magic {
+    animation: vfxEnhPartMagic 0.2s ease-out;
+}
+@keyframes vfxEnhPartMagic {
+    0%   { transform: translate(-50%,-50%) scale(1) rotate(0deg); }
+    100% { transform: translate(-50%,-50%) scale(0.15) rotate(180deg); }
+}
+
+/* --- 3. 暴擊震動（輕量微震） --- */
+.vfx-enh-crit-shake {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 9999;
+    animation: vfxEnhCritShake 0.08s ease-out;
+}
+@keyframes vfxEnhCritShake {
+    0%   { transform: translateX(0); }
+    25%  { transform: translateX(-2px); }
+    50%  { transform: translateX(2px); }
+    75%  { transform: translateX(-1px); }
+    100% { transform: translateX(0); }
+}
+
+/* --- 4. 重擊閃光（元素色，非白色） --- */
+.vfx-enh-heavy-flash {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    opacity: 0.35;
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 10;
+    animation: vfxEnhHeavyFlash 0.18s ease-out forwards;
+}
+@keyframes vfxEnhHeavyFlash {
+    0%   { transform: translate(-50%,-50%) scale(0.6); opacity: 0.35; }
+    50%  { transform: translate(-50%,-50%) scale(1.1); opacity: 0.2; }
+    100% { transform: translate(-50%,-50%) scale(1.3); opacity: 0; }
+}
+
+/* --- 5. Miss/Dodge 文字彈出 --- */
+.vfx-miss-text {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #94a3b8;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 10;
+    animation: vfxMissText 1s ease-out forwards;
+}
+@keyframes vfxMissText {
+    0%   { transform: translate(-50%, -50%) scale(0.7); opacity: 1; }
+    30%  { transform: translate(-50%, -60%) scale(1.1); opacity: 1; }
+    100% { transform: translate(-50%, -90%) scale(0.9); opacity: 0; }
+}
