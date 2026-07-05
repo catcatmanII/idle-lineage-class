@@ -109,7 +109,7 @@ function playerAttack() {
         // 🔧 黑暗妖精：附加劇毒疊層（命中 50%／劇毒精通 100% → 每次疊加一層，攻速愈高疊愈多）
         if (player.buffs && player.buffs.sk_dark_poison > 0 && target.curHp > 0 && Math.random() < (hasMastery('d_poison') ? 1 : 0.5)) {
             if (!target.st) target.st = newMobStatus();
-            let _pPct = hasMastery('d_poison') ? 2.0 : 0.6;
+            let _pPct = hasMastery('d_poison') ? 0.2 : 0.1;
             let _pUnit = Math.max(1, Math.floor(result.dmg * _pPct * (100 - getMobChaosResist(target)) / 100));
             if ((target.st.poison || 0) <= 0) {
                 target.st.poison = 50; target.st.poisonTick = 10;

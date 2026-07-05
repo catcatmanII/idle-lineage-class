@@ -416,7 +416,7 @@ function allyAttackOnce(ally) {
         // 🔧 黑暗妖精傭兵：疊層附加劇毒（與玩家同規則）
         if (ally.cls === 'dark' && ally.skills && ally.skills.includes('sk_dark_poison') && t.curHp > 0 && Math.random() < (allyHasMastery(ally, 'd_poison') ? 1 : 0.5)) {
             if (!t.st) t.st = newMobStatus();
-            let _pPct = allyHasMastery(ally, 'd_poison') ? 2.0 : 0.6;
+            let _pPct = allyHasMastery(ally, 'd_poison') ? 0.2 : 0.1;
             let _pUnit = Math.max(1, Math.floor(dmg * _pPct));
             if ((t.st.poison || 0) <= 0) {
                 t.st.poison = 50; t.st.poisonTick = 10;
