@@ -752,6 +752,8 @@ function loadGame() {
     if (s) {
         let d; try { d = JSON.parse(s); } catch(e){ alert('此存檔位的資料已毀損，無法載入。若先前有匯入過，可在載入畫面點「復原備份」還原。'); return; }   // 🛡️ 與其他讀檔點一致：毀損時乾淨報錯而非拋例外卡死
         player = d.p; mapState = d.ms;
+        if (!mapState.modifiers) mapState.modifiers = { prefixes:[], suffixes:[], nextRefreshAt:0, active:false };
+        if (!mapState.savedModifiers) mapState.savedModifiers = {};
         if (typeof applyGlobalAutoSellSettings === 'function') applyGlobalAutoSellSettings();   // 🔧 v2.6.91 功能5：載入角色時套用全域自動販賣設定（8 角色共用時覆蓋本檔規則）
         if (!player.enSeed) player.enSeed = 'es' + _seedHash((player.name || '') + '|' + (player.cls || '') + '|lz').toString(36);   // 🎲 舊存檔無強化種子：由角色名+職業決定論衍生（重匯入同一份舊檔也得相同種子→不能靠重匯入重洗強化）
         if (typeof sanitizeState === 'function') sanitizeState();   // 🛡️ 讀檔後合理性夾擠（抓改過/竄改的存檔：等級>100、強化值超上限、負金幣等）
