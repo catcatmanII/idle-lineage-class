@@ -22,7 +22,7 @@
     // 倉庫物品是否符合「套裝篩選」（獨立於主分類/子分類·與 whMatchFilter 串接使用）
     // _whSetFilter 變數仍定義在 12-npc-quests.js（HTML 模板引用）
     window.whMatchSetFilter = function(invOrWhItem) {
-        if (!_whSetFilter) return true;
+        if (typeof _whSetFilter === 'undefined' || !_whSetFilter) return true;
         return !!(invOrWhItem && invOrWhItem.seteff && invOrWhItem.seteff.slice(0, 2) === _whSetFilter);
     };
 
@@ -32,7 +32,7 @@
     if (typeof _origRehireAlly === 'function') {
         window.rehireAlly = function(slotN) {
             // 保存舊設定
-            let cur = (player.allies || []).find(a => a && a._slot === String(slotN));
+            let cur = (player.allies || []).find(a => a && a._slot == slotN);
             let saved = cur ? {
                 healHpPct: cur._healHpPct,
                 hpSkillPct: cur._hpSkillPct,

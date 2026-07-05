@@ -76,7 +76,7 @@
         if (!targets.length) return;
 
         for (let sid of MERC_SUPPORT_BUFFS) {
-            if (!ally.skills.includes(sid)) continue;
+            if (!Array.isArray(ally.skills) || !ally.skills.includes(sid)) continue;
             let sk = DB.skills[sid];
             if (!sk) continue;
 

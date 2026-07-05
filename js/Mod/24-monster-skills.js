@@ -161,6 +161,7 @@
      * @param {Object} mob - 怪物物件
      */
     function shuffleMonsterSkills(mob) {
+        if (!mob._magCd) mob._magCd = {};
         const slots = ['mag', 'mag2', 'mag3'];
         // 收集已定義的技能和冷卻
         const skills = slots.map(s => mob[s]);

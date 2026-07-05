@@ -42,9 +42,12 @@
         result.miscDex = _save.miscDex;
         // 重算以套用收藏加成（含娃娃全收集六維+1）
         player = result;
-        try { recomputeStats(); } catch(e) {}
-        { var _rm = royalAllyMult(); if (_rm !== 1) { result.mhp = Math.max(1, Math.floor((result.mhp || 1) * _rm)); result.mmp = Math.floor((result.mmp || 0) * _rm); } }
-        player = _save; calcStats();
+        try {
+            recomputeStats();
+            { var _rm = royalAllyMult(); if (_rm !== 1) { result.mhp = Math.max(1, Math.floor((result.mhp || 1) * _rm)); result.mmp = Math.floor((result.mmp || 0) * _rm); } }
+        } catch(e) { console.error('[30-merc-fix] buildAlly recomputeStats failed:', e); }
+        finally { player = _save; }
+        calcStats();
         result.curHp = Math.min(result.curHp || result.mhp, result.mhp || 1);
         return result;
     };

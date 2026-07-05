@@ -226,6 +226,7 @@
             if (_step <= 1) return _origAllyMaintainBuffs.apply(this, arguments);
 
             // 臨時把每個 buff 值加 (step-1)，讓原函式 -1 後實際减少 step
+            // 假設：原函式使用 buffs[k]-- 遞減。若改為 Math.floor(buffs[k] * decay) 則此 hack 失效
             if (!ally.buffs) return _origAllyMaintainBuffs.apply(this, arguments);
             let _keys = Object.keys(ally.buffs);
             _keys.forEach(k => { if (ally.buffs[k] > 0) ally.buffs[k] += (_step - 1); });
