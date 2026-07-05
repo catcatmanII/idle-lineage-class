@@ -1,0 +1,10 @@
+# 開發環境
+.opencode/
+.vscode/
+
+# Lock files
+*.lock
+
+# OS files
+Thumbs.db
+.DS_Store
