@@ -1615,7 +1615,7 @@ window.onload = () => {
         if(sk.status) eff.push('附加：'+(STATUS_NAME[sk.status.kind]||sk.status.kind));
         if(sk.summon) eff.push('召喚協力單位');
         if(sk.mEff) eff.push(SK_MEFF[sk.mEff]||'特殊效果');
-        if(sk.darkPoison) eff.push('一般攻擊命中 50% 機率使目標中毒：每秒該次攻擊 10% 傷害、持續 5 秒、最多 1 層（取較高傷害並刷新；劇毒精通→100%、每秒 20%）');
+        if(sk.darkPoison) eff.push('一般攻擊命中 50% 機率使目標中毒：每秒該次攻擊 60% 傷害、持續 5 秒、最多 1 層（取較高傷害並刷新；劇毒精通→100%、每秒 200%）');
         if(sk.d && typeof sk.d==='object'){
             let dd = sk.d, s = [], _resK = ['resFire','resWater','resEarth','resWind'];
             if(dd.resFire && dd.resFire===dd.resWater && dd.resFire===dd.resEarth && dd.resFire===dd.resWind){
