@@ -1,6 +1,6 @@
 # Idle Lineage Class
 
-改版說明：地圖詞綴、防作弊、中毒機制、傭兵優化。
+改版說明：地圖詞綴、防作弊、中毒機制、傭兵優化、QoL 浮動數字、加速齒輪、1.8 風格 UI。
 
 ## 來源與整合
 
@@ -10,22 +10,22 @@
 
 ---
 
-## 模組優化紀錄（2026-07-05）
+## 模組優化紀錄（2026-07-05 ~ 2026-07-06）
 
 對 11 個額外模組（21-31）進行全面優化：
 
 | 模組 | 變更 | 影響 |
 |------|------|------|
-| `22-map-modifiers.js` | 移除傭兵同步區塊（~50行），傭兵側由31獨立處理 | 職責分離，減少重複邏輯 |
-| `31-map-mod-ally.js` | 新增 `applyGroundEffectsToAlly()` + `clearAllyGroundEffects()` + alliesTick wrapper；修正 allyTryHeal wrapper 缺失 | 傭兵正確套用地面效果（燃燒/冰緩/感電/腐化） |
-| `23-anti-cheat.js` | 三次倉庫掃描合併為單次遍歷（Map-based） | 載入時掃描效率提升 ~3x |
-| `29-merc-support.js` | 血盟限定/共通增益分支合併為單一循環 | 消除重複程式碼 |
-| `27-afk-offline.js` | 提取 `_invDeltaItems` 共用函式；新增區塊目錄 | 降低重複，提升可維護性 |
-| `26-qol-enhance.js` | 移除封存的 `getMercDebuffTarget` 註解 | 清理死代碼 |
+| `js/Mod/22-map-modifiers.js` | 移除傭兵同步區塊（~50行），傭兵側由31獨立處理 | 職責分離，減少重複邏輯 |
+| `js/Mod/31-map-mod-ally.js` | 新增 `applyGroundEffectsToAlly()` + `clearAllyGroundEffects()` + alliesTick wrapper；修正 allyTryHeal wrapper 缺失 | 傭兵正確套用地面效果（燃燒/冰緩/感電/腐化） |
+| `js/Mod/23-anti-cheat.js` | 三次倉庫掃描合併為單次遍歷（Map-based） | 載入時掃描效率提升 ~3x |
+| `js/Mod/29-merc-support.js` | 血盟限定/共通增益分支合併為單一循環 | 消除重複程式碼 |
+| `js/Mod/27-afk-offline.js` | 提取 `_invDeltaItems` 共用函式；新增區塊目錄 | 降低重複，提升可維護性 |
+| `js/Mod/26-qol-enhance.js` | 移除封存的 `getMercDebuffTarget` 註解 | 清理死代碼 |
 
 ---
 
-## 🗺️ 地圖詞綴系統 (`22-map-modifiers.js`)
+## 🗺️ 地圖詞綴系統 (`js/Mod/22-map-modifiers.js`)
 
 **30 等**後可向席琳神殿 NPC「紮那」開啟，玩家可自由開關。
 
@@ -44,7 +44,7 @@
 | 1 | 席琳世界 | mid |
 | 2 | 瘋狂席琳 | top |
 
-地面效果互斥，最多同時一種。玩家側由 `22-map-modifiers.js` 處理，傭兵側由 `31-map-mod-ally.js` 獨立處理（透過 `applyGroundEffectsToAlly()` 每 tick 套用）。
+地面效果互斥，最多同時一種。玩家側由 `js/Mod/22-map-modifiers.js` 處理，傭兵側由 `js/Mod/31-map-mod-ally.js` 獨立處理（透過 `applyGroundEffectsToAlly()` 每 tick 套用）。
 
 **掉落獎勵**：每個詞綴 +8至12% 掉落量、+3至5% 稀有度。殺怪時有 1%×掉落量 機率額外掉 1 個物品；殺怪時暫時 ×1.5 稀有度加成。
 
@@ -52,7 +52,7 @@
 
 ---
 
-## 🛡️ 防存檔洗裝系統 (`23-anti-cheat.js`)
+## 🛡️ 防存檔洗裝系統 (`js/Mod/23-anti-cheat.js`)
 
 偵測並標註異常裝備（**不阻止操作，僅標記** ⚠️）。
 
@@ -78,7 +78,7 @@
 
 ### 玩家附加劇毒（黑暗妖精技能）
 
-每次攻擊 50% 機率附加中毒（**劇毒精通**：100% 觸發）。每層中毒每秒造成該次攻擊 **6%** 傷害（**劇毒精通：200%**），持續 5 秒，可疊層。攻速 0.18 → 穩態約 50 層。
+每次攻擊 50% 機率附加中毒（**劇毒精通**：100% 觸發）。每層中毒每秒造成該次攻擊 **10%** 傷害（**劇毒精通：20%**），持續 5 秒，最多 1 層（取較高傷害並刷新持續時間）。
 
 ### 地圖詞綴「被擊中毒」
 
@@ -115,9 +115,69 @@
 - **不重複施放**：目標已有相同負面效果時跳過，避免浪費 MP。已有邏輯確認正確（`allyCastNonDamage` 檢查 `targets.every(m => m.st[status.kind] > 0)`）。
 - **增益不重複**：傭兵自身或主玩家已有相同增益時不重複施放（`allyMaintainBuffs` 檢查 `ally.buffs[sid] > 0` 和 `player.buffs[sid] > 0`）。
 
+### 浮動戰鬥數字
+
+- **治癒數字**：玩家變身 sprite 頭上浮動顯示治癒量（綠色 `+XXX`），自動合併同 tick 治癒。
+- **玩家 MISS**：被怪物 miss/迴避時顯示灰色「MISS」浮動文字。
+- **怪物 MISS/DODGE**：怪物迴避或未命中時顯示浮動文字。
+- **傷害數字**：玩家受傷時在變身 sprite 頭上顯示紅色傷害數字。
+- **開關**：設 `window.__vfxNumOff = true` 關閉所有浮動數字（保留戰鬥訊息）。
+
+### 加速齒輪 (`js/Mod/32-speed-toggle.js`)
+
+遊戲速度三檔切換：**1x / 5x / 20x**。透過在 `gameLoop` 的 `_tickDebt` 中注入額外等效時間實現加速（非 `setInterval` 改速）。
+
+原本內建於 `01-drops-config.js`，以作者原始碼覆蓋後遺失，由 Mod 補回。
+
 ---
 
-## 🛡️ 傭兵支援模組 (`29-merc-support.js`)
+## 📦 Mod/ 架構
+
+所有功能模組集中於 `js/Mod/` 資料夾，依編號排序載入：
+
+| 模組 | 功能 |
+|------|------|
+| `00-optimizer.js` | 效能優化：補跑守護、`renderStatusEffects`/`renderDebuffPanel` 節流、wrapper 鏈偵測 |
+| `21-skill-tags.js` | 技能標籤系統 |
+| `22-map-modifiers.js` | 地圖詞綴系統（前綴/後綴/地面效果/掉落獎勵） |
+| `23-anti-cheat.js` | 防存檔洗裝偵測 |
+| `24-monster-skills.js` | 怪物技能配置 |
+| `26-qol-enhance.js` | QoL 增強（BOSS 優先/套裝篩選/傭兵重雇保留/MISS 特效/浮動數字） |
+| `27-afk-offline.js` | 離線掛機整合 |
+| `28-version-check.js` | 版本檢查 |
+| `29-merc-support.js` | 傭兵自動增益 |
+| `30-merc-fix.js` | 傭兵已知問題修復 |
+| `31-map-mod-ally.js` | 傭兵地面效果同步 |
+| `32-speed-toggle.js` | 加速齒輪 1x/5x/20x |
+
+共用工具函數（`$`、`$$`、`renderBatch`、`showBattleView` 等）位於 `js/00-utils.js`。
+
+---
+
+## 🚀 CI/CD — GitHub Pages 部署
+
+每次 push 到 `master` 分支時，GitHub Actions 自動觸發部署：
+
+1. **checkout** → **上傳 artifact**（整個 repo，排除 `.git`/`.opencode`/`.github`）
+2. **Deploy to GitHub Pages** → 以 artifact 內容部署到 `https://catcatmanii.github.io/idle-lineage-class/`
+
+workflow 位於 `.github/workflows/deploy-pages.yml`。
+
+---
+
+## 🎨 1.8 風格 UI
+
+移植參考版的 1.8 原版風格介面：
+
+- **道具欄**：`inventory-1.8.png` 底圖，8 格框架 + 金色滾條
+- **技能欄**：`skill-window-1.8.png` 底圖，技能樹框架
+- **裝備視窗**：`19-equipment-window.js` 重寫，浮動式裝備詳情面板
+
+CSS 實作於 `css/style.css`（`classic-inventory-*` / `classic-skill-*` 前綴系列）。
+
+---
+
+## 🛡️ 傭兵支援模組 (`js/Mod/29-merc-support.js`)
 
 傭兵自動對隊友（玩家 + 其他傭兵）施放增益法術。零修改來源檔，透過 Wrapper Pattern 包裝 `alliesTick`。
 
@@ -157,7 +217,7 @@
 
 ---
 
-## 🔧 傭兵修復模組 (`30-merc-fix.js`)
+## 🔧 傭兵修復模組 (`js/Mod/30-merc-fix.js`)
 
 暫時補丁，修復主程式中傭兵相關的已知問題。原作者修復後可移除此模組。
 

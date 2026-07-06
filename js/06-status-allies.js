@@ -400,7 +400,7 @@ function allyAttackOnce(ally) {
         // 🔧 黑暗妖精傭兵：預設攻擊自動維持附加劇毒（學過 sk_dark_poison 即視為常駐增益）；命中 50%／劇毒精通 100% 使目標中毒（與玩家同規則）
         if (ally.cls === 'dark' && ally.skills && ally.skills.includes('sk_dark_poison') && t.curHp > 0 && Math.random() < (allyHasMastery(ally, 'd_poison') ? 1 : 0.5)) {
             if (!t.st) t.st = newMobStatus();
-            let _pPct = allyHasMastery(ally, 'd_poison') ? 2.0 : 0.6;   // 🔧 劇毒精通：每秒 200%；否則 60%
+            let _pPct = allyHasMastery(ally, 'd_poison') ? 0.2 : 0.1;   // 🔧 劇毒精通：每秒 20%；否則 10%
             let _pUnit = Math.max(1, Math.floor(dmg * _pPct));
             // 🔧 新規則（與玩家一致）：未中毒、或新傷害高於現有時才上毒（取代並刷新5秒）；否則不更新，須等舊毒跑完
             if ((t.st.poison || 0) <= 0 || _pUnit > (t.st.poisonUnit || 0)) {
