@@ -1,12 +1,3 @@
-function getMobChaosResist(m) {
-    if (!m) return 0;
-    let base = Math.max(30, Math.min(50, 30 + (m.lv || 0) / 100 * 20));
-    if (m.un) base += 10;
-    if (m.boss) base += 10;
-    if (m._modResist) base += m._modResist;
-    return Math.min(90, base);
-}
-
 function newMobStatus() {
     return { freeze:0, stun:0, stone:0, sleep:0, poison:0, poisonTick:30, poisonDmg:0, poisonStacks:0, poisonUnit:0,
              blind:0, blindVal:0, weaken:0, disease:0, vacuum:0, broken:0, slow:0, mrhalf:0, magicseal:0, armorbreak:0, confuse:0, panic:0, guardbreak:0, terror:0, doom:0 };
@@ -39,10 +30,6 @@ function abnormalMagicHit(m, maxHv, hitOff) {
 function applyMobStatus(m, st, skillName) {
     if(!m.st) m.st = newMobStatus();
     if(BOSS_IMMUNE.includes(st.kind) && m.boss) return;
-    // 🗺️ 地圖詞綴前墜：免疫異常狀態（暈眩/冰凍/石化/麻痺/沉睡）
-    if (m._immAbnormal && ['freeze','stun','stone','paralyze','sleep'].includes(st.kind) && Math.random() * 100 < m._immAbnormal) return;
-    // 🗺️ 地圖詞綴前墜：免疫有害狀態（破甲/脆弱/沉默/封印/緩速）
-    if (m._immHarmful && ['armorbreak','fragile','silence','magicseal','slow'].includes(st.kind) && Math.random() * 100 < m._immHarmful) return;
     // 異常狀態魔法命中（玩家對怪物）：見 abnormalMagicHit；st.hitOff＝命中加值（🏛️ 真．冥皇執行劍 衝擊之暈 +4≈命中率+20%）
     // ⚡ st.force：跳過魔抗命中判定，由呼叫端自行擲固定機率（雷神之鎚電光衝擊／伊娃的責罵水之矛的 5% 固定附加）；BOSS 免疫仍上方先擋
     if(!st.force && !abnormalMagicHit(m, undefined, st.hitOff)) {
@@ -55,11 +42,8 @@ function applyMobStatus(m, st, skillName) {
     let k = st.kind;
     if(k === 'poison') {
         m.st.poison = dur; m.st.poisonTick = (st.tick || 3) * 10;
-        let _pInt = (player && player.d && player.d.int) || 0;
-        let _pMdmg = (player && player.d && player.d.mdmg) || 0;
-        let _baseP = Math.max(1, Math.floor(roll(st.dmg[0], st.dmg[1]) * (1 + _pInt * 0.05 + _pMdmg * 0.1)));
-        m.st.poisonDmg = Math.max(1, Math.floor(_baseP * (100 - getMobChaosResist(m)) / 100));
-        m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg;
+        m.st.poisonDmg = Math.max(1, Math.floor(roll(st.dmg[0], st.dmg[1]) * wpnEnFinalMult(player && player.eq && player.eq.wpn)));   // 🔧 武器強化 +1~+20 最終倍率：毒咒等技能固定 DoT 也吃（applyMobStatus 內部 player＝施法者：玩家或暫換身的傭兵）
+        m.st.poisonStacks = 1; m.st.poisonUnit = m.st.poisonDmg;   // 技能類中毒：單層（不疊加），仍顯示層數符號
     } else if(k === 'blind') {
         m.st.blind = dur; m.st.blindVal = st.hit || 4;
     } else if(k in m.st) {
@@ -367,7 +351,7 @@ function allyAttackOnce(ally) {
         let critD = isRanged ? (d.rangedCritDmg||0) : (d.meleeCritDmg||0);
         let _evSure = !!ally._darkEvadeSure, _evCrit = !!ally._darkEvadeCrit;   // 🆕 v2.6.13 #5b 迴避精通：迴避後下一次一般攻擊必中(_evSure)且必爆(_evCrit)
         if (_evSure || _evCrit) { ally._darkEvadeSure = false; ally._darkEvadeCrit = false; }
-        let hv = stretchHitValue((ally.lv||1) + hitB - t.lv + mobEffAC(t, ally));   // 🔧 修復：套用 stretchHitValue + 傳入 ally 讀傭兵自身弱點精通
+        let hv = Math.max(0, Math.min(20, (ally.lv||1) + hitB - t.lv + mobEffAC(t)));
         let _cwA = (ally.eq && ally.eq.wpn) ? DB.items[ally.eq.wpn.id] : null;   // 🥊 v2.6.20 重擊特效武器(粉碎·雙手鈍器)
         let _isCrushA = !!(_cwA && _cwA.eff === 'crush');
         let r = roll(1,20);
@@ -413,21 +397,17 @@ function allyAttackOnce(ally) {
         if (!_grazeA && !ally.classicMode && ally.eq && ally.eq.wpn && getWeaponTags(ally.eq.wpn.id).includes('雙刀') && Math.random() < 0.05) { _dualX2A = true; dmg = Math.max(1, dmg * 2); }
         t.curHp -= dmg; t.justHit = getWpnEle(ally.eq ? ally.eq.wpn : null, wpn); mobWake(t);
         if (ally._setDragonblood2 && dmg > 0) ally.curHp = Math.min(ally.mhp || 1, (ally.curHp || 0) + Math.max(1, Math.floor(dmg * ((ally.curHp < (ally.mhp || 1) * 0.5) ? 0.05 : 0.01))));   // 🐉 v2.6.9 #1b 龍血2/5（傭兵）：造成物理傷害吸血1%（自身HP<50%→5%）·回復戰鬥HP(curHp)
-        // 🔧 黑暗妖精傭兵：疊層附加劇毒（與玩家同規則）
+        // 🔧 黑暗妖精傭兵：預設攻擊自動維持附加劇毒（學過 sk_dark_poison 即視為常駐增益）；命中 50%／劇毒精通 100% 使目標中毒（與玩家同規則）
         if (ally.cls === 'dark' && ally.skills && ally.skills.includes('sk_dark_poison') && t.curHp > 0 && Math.random() < (allyHasMastery(ally, 'd_poison') ? 1 : 0.5)) {
             if (!t.st) t.st = newMobStatus();
-            let _pPct = allyHasMastery(ally, 'd_poison') ? 0.2 : 0.1;
+            let _pPct = allyHasMastery(ally, 'd_poison') ? 2.0 : 0.6;   // 🔧 劇毒精通：每秒 200%；否則 60%
             let _pUnit = Math.max(1, Math.floor(dmg * _pPct));
-            if ((t.st.poison || 0) <= 0) {
-                t.st.poison = 50; t.st.poisonTick = 10;
+            // 🔧 新規則（與玩家一致）：未中毒、或新傷害高於現有時才上毒（取代並刷新5秒）；否則不更新，須等舊毒跑完
+            if ((t.st.poison || 0) <= 0 || _pUnit > (t.st.poisonUnit || 0)) {
+                t.st.poison = 50; t.st.poisonTick = 10;                      // 持續 5 秒、1 層
                 t.st.poisonStacks = 1;
                 t.st.poisonUnit = _pUnit;
                 t.st.poisonDmg = _pUnit;
-            } else {
-                t.st.poison = 50;
-                t.st.poisonStacks = (t.st.poisonStacks || 0) + 1;
-                t.st.poisonUnit = Math.max(t.st.poisonUnit || 0, _pUnit);
-                t.st.poisonDmg = t.st.poisonUnit * t.st.poisonStacks;
             }
         }
         let mark = (heavy && isCrit) ? '會心一擊' : (isCrit ? '爆擊' : (heavy ? '重擊' : ''));
@@ -525,6 +505,7 @@ function allyCastMagic(ally, sk) {
         t.curHp -= totalDmg;
         _burstDmg += totalDmg;   // 🔧 魔爆累計
         t.justHit = (sk.ele && sk.ele !== 'none') ? sk.ele : 'magic';
+        t._spellHurt = true;   // 🎬 v3.0.14 傭兵法術傷害→hurt(含頭目)
         if (t.st && t.st.mrhalf > 0) t.st.mrhalf = 0;
         mobWake(t);
         if (sk.lifesteal && totalDmg > 0) { let h = Math.min(totalDmg, (ally.mhp || 0) - (ally.curHp || 0)); if (h > 0) { ally.curHp = Math.min(ally.mhp || 1, (ally.curHp || 0) + h); logCombat(`<span class="text-emerald-300 font-bold">【協力·${ally._allyName}】</span>吸取了 ${h} 點生命。`, 'heal', 'mercenary'); } }   // 🩸 v2.6.18 #中：吸血魔法（寒冷戰慄/吸血鬼之吻 lifesteal）回復戰鬥HP(curHp)，比照玩家 castSkill 624；上限本次傷害或缺血較小者
@@ -766,7 +747,7 @@ function allyStrikeRoll(ally, t, opts) {
     if (opts.forceHeavy) { heavy = true; }
     else if (opts.forceHit) { heavy = !opts.noHeavy && (roll(1, 20) === 20); }
     else {
-        let hv = stretchHitValue((ally.lv||1) + hitB - t.lv + mobEffAC(t, ally));   // 🔧 修復：套用 stretchHitValue + 傳入 ally 讀傭兵自身弱點精通
+        let hv = Math.max(0, Math.min(20, (ally.lv||1) + hitB - t.lv + mobEffAC(t)));
         let _isCrushS = !!(wpn && wpn.eff === 'crush');   // 🥊 v2.6.20 重擊特效武器(粉碎·雙手鈍器)
         let r = roll(1, 20);
         let _norm = ((r === 20) || (r !== 1 && hv >= r) || (r === 1 && ally.buffs && ally.buffs.sk_elf_preciseshot > 0));   // 🏹 精準射擊（妖精傭兵·存檔時持有此buff）：擲骰1由必定未命中→必定命中
@@ -1835,12 +1816,13 @@ function alliesTick() {
         }
         if (ally._cleaveTicks > 0) ally._cleaveTicks--;   // 🔧 切割（雙手劍重擊觸發）：攻速+20% 持續倒數
         if (!_ccBlock && (ally._atkCd = (ally._atkCd || 0) - 1) <= 0) {
+            ally._stunCycle = false;   // ⚔️ 硬直：攻擊週期結束→重置旗標（下週期被擊可再延遲一次）
             if (_castBlock) {   // 🤝 Phase4：沉默/魔法封印→只能基本攻擊（不施放 _atkSkill 與治癒）
-                ally._atkCd = (_ast.slowAtk > 0 ? Math.floor(20 * (1 + (player.statuses.slowPct || 100) / 100)) : 20); allyAttackOnce(ally);
+                ally._atkCd = (_ast.slowAtk > 0 ? 40 : 20); allyAttackOnce(ally);
             } else if (ally._healSkill && allyTryHeal(ally)) {   // 🤝 Phase 3：隊伍有人低於門檻→改施放治癒（消耗本回合行動）
                 ally._atkCd = 20;
             } else if (ally.cls === 'mage') {
-                ally._atkCd = (_ast.slowAtk > 0 ? Math.floor(20 * (1 + (player.statuses.slowPct || 100) / 100)) : 20);   // 法師施法間隔（緩速×）
+                ally._atkCd = (_ast.slowAtk > 0 ? 40 : 20);   // 法師施法間隔 ~2 秒（緩速×2）
                 allyActWithSkillGate(ally, allyMageAct);   // ⏳ 法師：攻擊魔法週期施放·平時基礎光箭普攻
             } else {
                 let wpn = (ally.eq && ally.eq.wpn) ? DB.items[ally.eq.wpn.id] : null;

@@ -21,13 +21,10 @@ function whCategory(id){
     if(d.type === 'arm' || d.type === 'acc') return 'armor';    // 防具（含飾品）
     return 'item';                                              // 其餘皆道具
 }
-function whSetFilter(v){ _whFilter = v; _whSubFilter = ''; _whSetFilter = ''; renderWarehouseNPC(document.getElementById('interaction-content')); }   // 切主分類→重置子分類/套裝篩選為「全部」
+function whSetFilter(v){ _whFilter = v; _whSubFilter = ''; renderWarehouseNPC(document.getElementById('interaction-content')); }   // 切主分類→重置子分類為「全部」
 // 🗄️ 倉庫「子分類」：武器/防具沿用裝備收集冊的圖鑑類型(equipCatKey/EQUIP_CATEGORIES)細分；道具分 卡片/技能/製作/任務/卷軸/其他。空字串 ''＝全部。
 let _whSubFilter = '';
 function whSetSubFilter(v){ _whSubFilter = v || ''; renderWarehouseNPC(document.getElementById('interaction-content')); }
-// 🗄️ 倉庫「套裝篩選」：篩選席琳套裝類型（紅獅/白鳥/鐵衛/...）；空字串 ''＝全部。
-let _whSetFilter = '';
-function whSetSetFilter(v){ _whSetFilter = v || ''; renderWarehouseNPC(document.getElementById('interaction-content')); }
 // 製作材料 id 集合（掃所有配方的 req/mats·排除金幣）：用來把倉庫道具歸入「製作」子分類。延後到首次呼叫才建（確保 js/14 配方已載入）。
 let _whCraftMatIds = null;
 function _whBuildCraftMatIds(){
@@ -68,7 +65,6 @@ function whMatchFilter(id){
     if(_whFilter === 'armor' && _whSubFilter === 'tshirt') { let d = DB.items[id]; return !!(d && d.type === 'arm' && d.slot === 'tshirt'); }   // 🔧 v2.6.77 內衣子分類：依 slot 直接比對
     return (typeof equipCatKey === 'function') ? (equipCatKey(id, DB.items[id]) === _whSubFilter) : true;
 }
-// 🔧 QoL：whMatchSetFilter 已搬至 26-qol-enhance.js（_whSetFilter 變數留此）
 // 🛡️ 倉庫資料安全網（防「不匯出匯入也會清空」）：
 //   _whLoadOk＝最近一次 loadWarehouse 是否成功解碼（桶存在卻解不開＝false → saveWarehouse 拒絕用空覆蓋，先把原始位元組備份）。
 //   _whLoadUids＝最近一次載入到的 uid 集合（多分頁加寫合併：寫入前比對，保留其他分頁在本快照之後新存入、而本次沒有的堆疊；本快照原有的 uid 不併→不會復活本次刻意取出的物品）。
@@ -281,6 +277,9 @@ function whWithdraw(uidv, qty){
         let stack = _whStackFind(player.inv, moved);
         if(stack) stack.cnt += qty; else player.inv.push(moved);
     }
+    // 🗡️🧰 v3.0.61 收集冊：「提領＝獲得」也登錄圖鑑（原本只在 gainItem 登錄→倉庫提領不點亮；傳統模式裝備自帶強化、常整批進出倉庫最易踩到）
+    if (typeof registerEquipObtained === 'function') registerEquipObtained(it.id);
+    if (typeof registerMiscObtained === 'function') registerMiscObtained(it.id);
     // 🔧 先存玩家存檔（已收到物品）再存倉庫（已移除物品）：萬一第二次寫入失敗（如 localStorage 容量爆），
     //    結果是「物品重複」而非「庫存消失卻沒領到」，避免領取時遺失物品。
     saveGame(); saveWarehouse(w); renderTabs(true); updateUI();
@@ -301,8 +300,8 @@ function renderWarehouseNPC(div){
     _activePanel = null;   // 倉庫不需自動刷新
     let w = loadWarehouse();
     let mkBtn = (it, act) => `<button onclick="${act}('${it.uid}')" data-tip-uid="${it.uid}" data-tip-src="${act === 'whWithdraw' ? 'wh' : 'inv'}" class="tip-host btn w-full text-left py-1.5 px-2 text-sm bg-slate-800 hover:bg-slate-700 border-slate-600">${getItemFullName(it)}</button>`;
-    let _invItems = player.inv.filter(it => whMatchFilter(it.id) && whMatchSetFilter(it) && !it.lock);   // 🔒 鎖定物品不顯示於倉庫存放清單 + 套裝篩選
-    let _whItems  = w.items.filter(it => whMatchFilter(it.id) && whMatchSetFilter(it));
+    let _invItems = player.inv.filter(it => whMatchFilter(it.id) && !it.lock);   // 🔒 鎖定物品不顯示於倉庫存放清單（用戶要求：鎖定物品存放時不顯示）
+    let _whItems  = w.items.filter(it => whMatchFilter(it.id));
     let invHtml = _invItems.length ? _invItems.map(it => WH_NO_STORE.includes(it.id)
         ? `<div data-tip-uid="${it.uid}" data-tip-src="inv" class="tip-host w-full text-left py-1.5 px-2 text-sm bg-slate-900/60 border border-slate-700 rounded opacity-50 cursor-not-allowed">${getItemFullName(it)} <span class="text-xs text-red-400">（不可存）</span></div>`
         : mkBtn(it, 'whDeposit')).join('') : '<div class="text-slate-500 text-sm text-center py-4">此分類背包沒有物品</div>';
@@ -328,10 +327,6 @@ function renderWarehouseNPC(div){
             <select onchange="whSetSubFilter(this.value)" class="bg-slate-900 border border-slate-600 text-white rounded py-1 px-2 text-sm" title="細分類：武器/防具依圖鑑類型，道具分卡片/技能/製作/任務/卷軸/其他">
                 <option value="">全部</option>
                 ${whSubCatOptions().map(o => `<option value="${o.key}" ${_whSubFilter===o.key?'selected':''}>${o.name}</option>`).join('')}
-            </select>
-            <select onchange="whSetSetFilter(this.value)" class="bg-slate-900 border border-slate-600 text-white rounded py-1 px-2 text-sm" title="席琳套裝篩選：只顯示指定套裝的裝備">
-                <option value="">全部套裝</option>
-                ${typeof SHERINE_EFFECTS !== 'undefined' ? SHERINE_EFFECTS.map(g => `<option value="${g}" ${_whSetFilter===g?'selected':''}>${g}</option>`).join('') : ''}
             </select>
             <span class="text-slate-500 text-xs">（存入／取出共用此分類）</span>
             <span class="text-slate-300 font-bold ms-2">數量：</span>

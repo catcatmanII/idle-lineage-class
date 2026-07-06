@@ -226,11 +226,11 @@ const SKILL_TAGS = {
   "sk_helm_str3": ["持續時間"],
 };
 
-// 注入 tags：在 DB.SKILL_DATA 已存在的項目加上 tags
-if (typeof DB !== "undefined" && DB.SKILL_DATA) {
+// 注入 tags：在 DB.skills 已存在的項目加上 tags
+if (typeof DB !== "undefined" && DB.skills) {
   for (const [key, tags] of Object.entries(SKILL_TAGS)) {
-    if (DB.SKILL_DATA[key]) {
-      DB.SKILL_DATA[key].tags = tags;
+    if (DB.skills[key]) {
+      DB.skills[key].tags = tags;
     }
   }
 }

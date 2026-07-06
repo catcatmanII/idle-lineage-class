@@ -40,7 +40,7 @@ function gameLoop() {
 
     if(elapsed < 0) elapsed = 0;
     if(elapsed > MAX_CATCHUP_MS) elapsed = MAX_CATCHUP_MS; // 上限保護
-    _tickDebt += elapsed * (_gameSpeeds ? _gameSpeeds[_gameSpeedIdx] : 1);
+    _tickDebt += elapsed;
 
     let n = Math.floor(_tickDebt / TICK_MS);
     _tickDebt -= n * TICK_MS;
@@ -129,6 +129,14 @@ function _initMobListGuard() {   // 在 #mob-list(穩定父節點·只換其 inn
     document.addEventListener('pointerup', release);
     document.addEventListener('pointercancel', release);
 }
+// ⚔️ 天堂職業硬直：玩家被「直接命中」（物理/魔法·非 DoT）時，延遲下次一般攻擊 d.hitstun 個 tick。每個攻擊週期最多硬直一次（不無限疊加·避免被群毆時完全鎖死）。
+function applyPlayerHitstun() {
+    if (!state || state._pStunCycle || player.dead) return;
+    let hs = (player.d && player.d.hitstun) || 0;
+    if (hs <= 0) return;
+    state.pDmgTick = (state.pDmgTick || 0) - hs;   // 攻擊累加器倒退 → 下次攻擊延後 hs tick
+    state._pStunCycle = true;
+}
 function tick() {
     if(!state.running || player.dead) return;
     state.ticks++;
@@ -139,9 +147,8 @@ function tick() {
     
     let canAct = true;
     for(let k in player.statuses) {
-        if (player.statuses[k] > 0 && k !== 'poisonDmg' && k !== 'poisonTick' && k !== 'burnDmg' && k !== 'burnTick' && k !== 'scaldDmg' && k !== 'scaldTick' && k !== 'bleedDmg' && k !== 'bleedTick' && k !== 'slowPct') {
-            if (k === 'slowAtk' && player.statuses[k] > 1000) { /* chill_ground 設定的 slowAtk 不遞減，由地面效果清除 */ }
-            else { player.statuses[k]--; }
+        if (player.statuses[k] > 0 && k !== 'poisonDmg' && k !== 'poisonTick' && k !== 'burnDmg' && k !== 'burnTick' && k !== 'scaldDmg' && k !== 'scaldTick' && k !== 'bleedDmg' && k !== 'bleedTick') {
+            player.statuses[k]--;
             if(k === 'cleave' && player.statuses.cleave === 0) calcStats();   // 🔧 切割到期：重算攻速
             if(k === 'evilAura' && player.statuses.evilAura === 0) calcStats();   // 🔧 邪靈之氣到期：還原 AC/ER
             if(k === 'stun' || k === 'freeze' || k === 'stone' || k === 'paralyze' || k === 'sleep') canAct = false;
@@ -149,15 +156,8 @@ function tick() {
     }
     if (inAbsBarrier()) canAct = false;   // 🛡️ 絕對屏障：無法攻擊/施法/自動行動
 
-    if (state.ticks % 160 === 0 && !inAbsBarrier()) {
-        let _noRegen = mapModHasSuffix('no_regen');
-        if (_noRegen) {
-            let _tier = getModifierTier();
-            if (_tier >= 1) { /* tier 1+: 擋 HP+MP，不呼叫 regenTick */ }
-            else { /* tier 0: 只擋 HP，MP 仍回復 → 直接回 MP */ if(player.mp < player.mmp && (hasLoadFreeRegen() || (player.d.loadTier||0) < 1)) { let _mpR = Number(player.d.mpR || 0); if (_mpR > 0) player.mp = Math.min(player.mmp, player.mp + _mpR); } }
-        } else {
-            regenTick();
-        }
+    if (state.ticks % 160 === 0 && !inAbsBarrier()) {   // 🛡️ 絕對屏障：不自然恢復 HP/MP
+        regenTick();
     }
     if (state.ticks % 10 === 0) siegeTick();   // 攻城戰：每秒檢查時限
     if (state.ticks % 100 === 0) { try { refreshPandoraMarket(false); } catch (e) {} }   // 🔧 潘朵拉黑市：每 10 秒檢查是否到 10 分鐘換商品（含稀有公告）
@@ -216,6 +216,7 @@ function tick() {
     if(player.cds.atkSk > 0) player.cds.atkSk--;
     if(player.cds.healSk > 0) player.cds.healSk--;
     if((player.cds.purifySk || 0) > 0) player.cds.purifySk--;   // 🔧 淨化技獨立冷卻
+    if((player.cds.castLock || 0) > 0) player.cds.castLock--;   // 🔮 天堂職業施法冷卻下限（法師快·王族/黑妖慢）·autoCastSpells 依此節流攻擊魔法
     if(canAct) autoCastSpells();   // 每 tick 嘗試自動施法，實際間隔由上方冷卻控制
 
     if(state.ticks % 10 === 0) {
@@ -226,10 +227,9 @@ function tick() {
         // 原於 regenTick 每 160 tick 批次扣 16，到期誤差可達 0~16 秒（如 16 秒的魔法屏障可能瞬間過期）；
         // taming 原本另有專屬遞減，一併整合於此。
         let _buffEnded = false;
-        let _buffDownStep = player._sufBuffDown ? Math.max(1, Math.round(100 / (100 - player._sufBuffDown))) : 1;
         for(let k in player.buffs) {
             if(player.buffs[k] > 0) {
-                player.buffs[k] = Math.max(0, player.buffs[k] - _buffDownStep);
+                player.buffs[k]--;
                 if(player.buffs[k] <= 0) {
                     player.buffs[k] = 0;
                     _buffEnded = true;
@@ -266,8 +266,17 @@ function tick() {
                 } else if(KING_ROOMS[mapState.current]) {
                     delay = 50;                                                 // 🔧 軍王之室：固定 5 秒復活，不受日光術/席琳的世界加速影響
                 } else {
-                    delay = (player.buffs.sk_sunlight > 0) ? 10 : 50;          // 50 tick = 5 秒（日光術約 1 秒）
-                    if (sherineWorldActive() && !isSiegeArea(mapState.current)) delay = Math.max(1, delay - 10);   // 🔮 席琳的世界：搜索時間 −1 秒（與日光術疊加）
+                    // 🐾 v3.0.27 重生延遲＝基準 50 tick(5秒) × 變身移動速度(pf.wlk·16=基準·越小越快) × 移動加速倍率(加速/勇敢/精靈餅乾)
+                    let _pfW = (player._setPoly && player._setPoly.wlk) ? player._setPoly.wlk          // 套裝變身優先（與 js/02 變身套用同優先序）
+                             : ((player.buffs.poly > 0 && player.poly && player.poly.wlk) ? player.poly.wlk : 16);   // 卷軸變身移動速度；未變身＝16
+                    let _mv = 1;   // 加速/勇敢/餅乾也加快「移動速度」→加快重生（與攻速同倍率·相乘疊加）
+                    if (player.buffs.haste > 0 || player._equipHaste) _mv *= 0.67;   // 加速術/裝備常駐加速 +33%
+                    if (player.buffs.brave > 0) _mv *= 0.67;                          // 勇敢藥水 +33%
+                    if (player.buffs.elfcookie > 0) _mv *= 0.85;                      // 精靈餅乾 +15%
+                    delay = Math.round(50 * (_pfW / 16) * _mv);
+                    if (player.buffs.sk_sunlight > 0) delay -= 10;                    // ☀️ v3.0.27 日光術：固定加快 1 秒（10 tick·由「設為1秒」改為「−1秒」）
+                    if (sherineWorldActive() && !isSiegeArea(mapState.current)) delay -= 10;   // 🔮 席琳的世界：固定加快 1 秒（與日光術疊加）
+                    delay = Math.max(1, delay);
                 }
                 if(mapState.spawnAt[i] == null) mapState.spawnAt[i] = nowT + delay; // 空格剛出現：排程 delay 後（一般／純BOSS房／軍王之室皆 5 秒）
                 if(nowT >= mapState.spawnAt[i]) { spawnMob(i); mapState.spawnAt[i] = null; }
@@ -279,13 +288,11 @@ function tick() {
     if(canAct) {
         state.pDmgTick++;
         let aspdTicks = Math.max(1, Math.floor(player.d.aspd * 10));
-        if(player.statuses && player.statuses.slowAtk > 0) {
-            let _slowPct = player.statuses.slowPct || 100;
-            aspdTicks = Math.floor(aspdTicks * (1 + _slowPct / 100));
-        }
+        if(player.statuses && player.statuses.slowAtk > 0) aspdTicks *= 2;            // 攻擊速度減慢100%（間隔翻倍）
         if(state.pDmgTick >= aspdTicks) {
             playerAttack();
             state.pDmgTick = 0;
+            state._pStunCycle = false;   // ⚔️ 硬直：每次攻擊後重置「本週期已硬直」旗標（下週期被擊可再延遲一次）
         }
     }
     
@@ -415,7 +422,6 @@ function tick() {
                 let heal = _h.healDice
                     ? Math.max(1, Math.floor((rollDice(_h.healDice[0], _h.healDice[1]) + (_h.healBase || 0)) * _h.spCoef))
                     : Math.max(1, roll(_h.valDice[0], _h.valDice[1]) + (_h.magicDmg || 0));
-                if (player._decayHealMult != null) heal = Math.floor(heal * player._decayHealMult);
                 player.hp = Math.min(player.mhp, player.hp + heal);   // 🔧 水之元氣不套用於持續回復(HoT)
                 _hotAllies.forEach(a => { a.curHp = Math.min(a.mhp || 1, (a.curHp || 0) + heal); });   // 🍃 全體傭兵同步回復
                 _h.ticksLeft--;
@@ -511,7 +517,6 @@ function regenTick() {
         // 使用 Number() 強制轉換為數字，避免 10 + '1' = 101 的字串相加 Bug
         let totalHpRegen = Number(baseHpRegen) + Number(player.d.hpR || 0);
         if (totalHpRegen > 0) {
-            if (player._decayHealMult != null) totalHpRegen = Math.floor(totalHpRegen * player._decayHealMult);
             player.hp = Math.min(player.mhp, player.hp + totalHpRegen);
         }
     }
@@ -779,7 +784,6 @@ function setTarget(idx) {
     mapState.targetIdx = idx;
     renderMobs();
 }
-// 🔧 QoL：getMercDebuffTarget 已搬至 26-qol-enhance.js
 
 // ===== 物理傷害與命中核心計算（遠近距離拆分）=====
 // 近距離武器：依 力量(近距離傷害/命中/爆擊)；遠距離武器：依 敏捷(遠距離傷害/命中/爆擊)
@@ -801,7 +805,7 @@ function stretchHitValue(raw) {
 }
 function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst) {
     let isRanged = !!(wpn && wpn.ranged);
-    let hitBonus = (isRanged ? player.d.rangedHit : player.d.meleeHit) + player.d.extraHit + (player._skillHitBonus || 0) + (player._setBeauty5 ? (player._beautyMissStack || 0) : 0) - (player._sufHitDown || 0);   // 🗼 范德之劍：施展衝擊之暈時本次技能近距離命中+1；🔮 麗人5/5：未命中堆疊命中；🗺️ 地圖詞綴：命中降低
+    let hitBonus = (isRanged ? player.d.rangedHit : player.d.meleeHit) + player.d.extraHit + (player._skillHitBonus || 0) + (player._setBeauty5 ? (player._beautyMissStack || 0) : 0);   // 🗼 范德之劍：施展衝擊之暈時本次技能近距離命中+1；🔮 麗人5/5：未命中堆疊命中
     let dmgBonus = (isRanged ? player.d.rangedDmg : player.d.meleeDmg);
     let critRate = isRanged ? player.d.rangedCrit : player.d.meleeCrit;
     let critDmg  = isRanged ? player.d.rangedCritDmg : player.d.meleeCritDmg;
@@ -825,11 +829,6 @@ function getPhysicalDmg(diceStr, target, wpn, arrowData, forceHeavy, forceHit, f
     else if (rollHit !== 1 && hitValue >= rollHit) hit = true;
     else if (rollHit === 19) { hit = true; graze = true; }   // 一般武器：擲到19本應未命中時 → 擦傷（傷害剩50%）
     if(!hit) { if (player._setBeauty5) player._beautyMissStack = (player._beautyMissStack || 0) + 10; return { dmg: 0, hit: false, heavy: false, crit: false, graze: false, crush: false, ranged: isRanged }; }   // 🔮 麗人5/5：未命中→額外命中+10可堆疊
-    // 🗺️ 地圖詞綴後墜：怪物迴避
-    if (target && target._modAvoid && Math.random() * 100 < target._modAvoid) {
-        if (player._setBeauty5) player._beautyMissStack = (player._beautyMissStack || 0) + 10;
-        return { dmg: 0, hit: false, heavy: false, crit: false, graze: false, crush: false, ranged: isRanged };
-    }
     if (player._setBeauty5 && player._beautyMissStack) player._beautyMissStack = 0;   // 🔮 麗人5/5：物理命中→堆疊歸零
 
     // ⚔️ 武器種類內建特性（2026-07 用戶要求·僅自然骰路徑=一般攻擊/雙擊·🎮 經典模式停用）：

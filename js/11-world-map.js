@@ -1181,71 +1181,7 @@ function changeMap(force) {
     syncMapSelectors();   // 切換完成後，同步分類選單與地圖選單為目前所在地圖
 }
 
-// ===== 🗺️ 製圖大師紮那：地圖詞綴開關 =====
-function toggleMapModFromZana() {
-    if ((player.lv || 1) < 30) { logSys('<span class="text-red-400">等級不足，需要 30 等才能開啟地圖詞綴。</span>'); return; }
-    player.mapModOn = !player.mapModOn;
-    if (player.mapModOn) {
-        mapState.modifiers.nextRefreshAt = state.ticks + 18000;
-        logSys('<span class="text-emerald-400 font-bold">【地圖詞綴】已開啟。</span><span class="text-slate-400">狩獵區怪物獲得額外能力，擊殺後提升掉落量與稀有度。</span>');
-    } else {
-        logSys('<span class="text-slate-300">【地圖詞綴】已關閉。</span>');
-    }
-    saveGame();
-    renderMobs();
-    let el = document.getElementById('interaction-content');
-    if (el) renderZanaMapMod(el);
-}
-function renderZanaMapMod(div) {
-    let on = !!(player && player.mapModOn);
-    let lvOk = (player.lv || 1) >= 30;
-    let active = on && mapState.modifiers && mapState.modifiers.active;
-    let remainSec = active && mapState.modifiers.nextRefreshAt ? Math.max(0, Math.floor((mapState.modifiers.nextRefreshAt - state.ticks) / 10)) : 0;
-    let mm = String(Math.floor(remainSec / 60)).padStart(2, '0');
-    let ss = String(remainSec % 60).padStart(2, '0');
-    let pfx = active ? (mapState.modifiers.prefixes || []) : [];
-    let sfx = active ? (mapState.modifiers.suffixes || []) : [];
-    let qty = active ? (mapState.modifiers.dropQtyBonus || 0) : 0;
-    let rarity = active ? (mapState.modifiers.dropRarityBonus || 0) : 0;
-    let canReroll = on && player.gold >= 150000;
-
-    let modInfo = '';
-    if (active) {
-        let lines = [];
-        if (pfx.length) lines.push('🏆 ' + pfx.map(id => MAP_MOD_PREFIXES[id] ? MAP_MOD_PREFIXES[id].n : id).join(' '));
-        if (sfx.length) lines.push('⚠️ ' + sfx.map(id => MAP_MOD_SUFFIXES[id] ? MAP_MOD_SUFFIXES[id].n : id).join(' '));
-        if (qty || rarity) lines.push('🎁 掉落+' + qty + '% 稀有+' + rarity + '%');
-        lines.push('⏱ ' + mm + ':' + ss);
-        modInfo = '<div class="bg-slate-900/60 border border-slate-700 rounded p-2 text-xs leading-relaxed">' + lines.join('<br>') + '</div>';
-    }
-
-    div.innerHTML = `
-        <div class="flex flex-col gap-3 p-1">
-            <div class="text-slate-300 text-sm leading-relaxed" style="white-space:pre-line">紮那：你好，冒險者。我是紮那，製圖大師。
-我專門研究異界的裂隙與地圖的奧秘。
-地圖詞綴能讓狩獵區的怪物變得更強大，但擊殺牠們也能獲得更豐厚的回報。
-${lvOk ? '你已經準備好了。' : `需要達到 30 等才能開啟（目前 ${player.lv || 1} 等）。`}</div>
-            <div class="bg-slate-800/60 border ${on ? 'border-emerald-700' : 'border-slate-600'} rounded p-3">
-                <div class="font-bold mb-1 ${on ? 'text-emerald-400' : 'text-slate-200'}">地圖詞綴：目前 ${on ? '開啟' : '關閉'}</div>
-                <div class="text-slate-400 text-xs">${on ? '全域詞綴生效中，30 分鐘後自動關閉。' : '與紮那對話開啟。'}</div>
-            </div>
-            ${modInfo}
-            <button onclick="toggleMapModFromZana()" class="px-4 py-2 rounded font-bold transition
-                ${!lvOk ? 'bg-slate-600 text-slate-400 cursor-not-allowed' :
-                  on ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-emerald-700 hover:bg-emerald-600 text-white'}"
-                ${!lvOk ? 'disabled' : ''}>
-                ${!lvOk ? '等級不足' : on ? '關閉地圖詞綴' : '開啟地圖詞綴'}
-            </button>
-            ${on ? '<button onclick="rerollMapModFromZana()" class="px-4 py-2 rounded font-bold transition ' + (canReroll ? 'bg-amber-700 hover:bg-amber-600 text-white' : 'bg-slate-600 text-slate-400 cursor-not-allowed') + '" ' + (canReroll ? '' : 'disabled') + '>🎲 重骰詞綴 (15萬金幣)</button>' : ''}
-        </div>`;
-}
-function rerollMapModFromZana() {
-    rerollMapModifiers();
-    let el = document.getElementById('interaction-content');
-    if (el) renderZanaMapMod(el);
-}
-
-// ===== 📜 席琳神殿：祈禱（席琳的世界 開關介面）=====
+// ===== 🔮 席琳神殿：祈禱（席琳的世界 開關介面）=====
 function toggleSherineWorld() {
     if ((player.lv || 1) < 40) { logSys('<span class="text-red-400">等級未達 40，席琳對你的祈禱沒有回應。</span>'); return; }
     player.sherineWorld = !player.sherineWorld;
@@ -1460,7 +1396,6 @@ function renderTownNPCs(townId) {
         else if(npc.type === 'petstore') typeIcon = "🐾";
         else if(npc.type === 'travel') typeIcon = "⛵";
         else if(npc.type === 'synth') typeIcon = "🎴";
-        else if(npc.type === 'mapmod') typeIcon = "🗺️";
 
         el.innerHTML = `
             <div class="flex items-start justify-between mb-2">
@@ -1601,8 +1536,6 @@ function interactNPC(npcId, townId) {
         renderIsmaelExchange(contentDiv);
     } else if (npc.id === 'npc_sherine') {
         renderSherinePray(contentDiv);
-    } else if (npc.id === 'npc_zana') {
-        renderZanaMapMod(contentDiv);
     } else if (npc.id === 'npc_han') {
         renderHanNPC(contentDiv);
     } else if (npc.id === 'npc_kent_guard') {

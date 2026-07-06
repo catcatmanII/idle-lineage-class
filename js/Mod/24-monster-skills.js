@@ -19,7 +19,7 @@
     // 使用率為小數（0.5 = 50%）
     const USAGE_RATE_MAP = {
         // 從參考站抓取的使用率資料
-        'harpy': { '木乃伊的咀咒': 1.0, '吸血鬼之吻': 1.0 },  // 哈維：100% + 100%
+        'harpy': { '木乃伊的詛咒': 1.0, '吸血鬼之吻': 1.0 },  // 哈維：100% + 100%
         'dark_elf': { '龍捲風': 0.6 },  // 黑暗精靈：60%
         'doppel_boss': { '冰雪暴': 0.7, '火風暴': 0.3 },  // 變形怪首領：70% + 30%
         'orc_mage': { '燃燒的火球': 1.0 },  // 妖魔法師：100%
@@ -106,18 +106,12 @@
         'de_elder_andis': { '衝擊波動': 0.5 },  // 長老．安迪斯：50%
     };
 
-    // ========== 技能名稱對應表 ==========
-    // 格式：{ [referenceSiteName]: internalSkillName }
-    const SKILL_NAME_MAP = {
-        // 參考站技能名 → 遊戲內技能名
-        '木乃伊的咀咒': '木乃伊的詛咒',  // 參考站用「咀咒」，遊戲用「詛咒」
-        '妖魔法師-燃燒的火球': '燃燒的火球',
-        '哈維-木乃伊的咀咒': '木乃伊的詛咒',
-        '哈維-吸血鬼之吻': '吸血鬼之吻',
-        '黑暗精靈-龍捲風': '龍捲風',
-        '變形怪首領-冰雪暴': '冰雪暴',
-        '變形怪首領-火風暴': '火風暴',
-    };
+    // ========== 怪物識別對應表（mob.n → DB.mobs key）==========
+    const NAME_TO_KEY = {};
+    for (const key in DB.mobs) {
+        const mon = DB.mobs[key];
+        if (mon && mon.n) NAME_TO_KEY[mon.n] = key;
+    }
 
     // ========== 冷卻時間平衡 ==========
     // 狀態異常技能：固定冷卻 100 tick（10 秒）
@@ -187,32 +181,30 @@
      * @returns {boolean} 是否有更新
      */
     function updateMonsterSkillRates(mob) {
-        if (!mob || !mob.key) return false;
-        
-        const rates = USAGE_RATE_MAP[mob.key];
+        if (!mob || !mob.n) return false;
+        const key = NAME_TO_KEY[mob.n];
+        if (!key) return false;
+        const rates = USAGE_RATE_MAP[key];
         if (!rates) return false;
         
         let updated = false;
         
-        // 1. 更新使用率
+        // 1. 更新使用率（直接以 mob.mag.skn 內部名查表）
         if (mob.mag && mob.mag.skn) {
-            const skillName = SKILL_NAME_MAP[mob.mag.skn] || mob.mag.skn;
-            if (rates[skillName] !== undefined) {
-                mob.mag.chance = rates[skillName];
+            if (rates[mob.mag.skn] !== undefined) {
+                mob.mag.chance = rates[mob.mag.skn];
                 updated = true;
             }
         }
         if (mob.mag2 && mob.mag2.skn) {
-            const skillName = SKILL_NAME_MAP[mob.mag2.skn] || mob.mag2.skn;
-            if (rates[skillName] !== undefined) {
-                mob.mag2.chance = rates[skillName];
+            if (rates[mob.mag2.skn] !== undefined) {
+                mob.mag2.chance = rates[mob.mag2.skn];
                 updated = true;
             }
         }
         if (mob.mag3 && mob.mag3.skn) {
-            const skillName = SKILL_NAME_MAP[mob.mag3.skn] || mob.mag3.skn;
-            if (rates[skillName] !== undefined) {
-                mob.mag3.chance = rates[skillName];
+            if (rates[mob.mag3.skn] !== undefined) {
+                mob.mag3.chance = rates[mob.mag3.skn];
                 updated = true;
             }
         }
@@ -255,10 +247,7 @@
             try {
                 if (typeof mapState !== 'undefined' && mapState.mobs && mapState.mobs[idx]) {
                     const mob = mapState.mobs[idx];
-                    // 初始化冷卻槽位（確保 _magCd 有對應 key，供洗牌同步）
-                    if (mob.mag) mob._magCd.mag = mob._magCd.mag ?? mob.mag.cd;
-                    if (mob.mag2) mob._magCd.mag2 = mob._magCd.mag2 ?? mob.mag2.cd;
-                    if (mob.mag3) mob._magCd.mag3 = mob._magCd.mag3 ?? mob.mag3.cd;
+                    // _magCd 由遊戲原生程式（03-combat-core.js）懶初始化，不需在此預設
                     // 更新使用率 + 平衡冷卻 + 打亂技能順序
                     updateMonsterSkillRates(mob);
                 }
@@ -277,9 +266,10 @@
         calculateCooldown,
         shuffleMonsterSkills,
         USAGE_RATE_MAP,
-        SKILL_NAME_MAP,
+        NAME_TO_KEY,
         STATUS_COOLDOWNS,
     };
 
-    console.log('[MonsterSkills] 怪物技能系統已載入，共定義 ' + Object.keys(USAGE_RATE_MAP).length + ' 隻怪物的技能使用率');
+    const _count = Object.keys(USAGE_RATE_MAP).length;
+    console.log('[MonsterSkills] 怪物技能系統已載入，共 ' + _count + ' 隻怪物有技能資料，' + Object.keys(NAME_TO_KEY).length + ' 個怪物名稱可對應');
 })();

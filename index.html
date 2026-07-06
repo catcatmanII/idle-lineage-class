@@ -37,14 +37,16 @@
     <!-- 🖥️ v2.5.8 流動式版面：#app-stage 由 CSS position:fixed;inset:0 填滿整個視窗，內層三欄 flex 隨視窗大小自然撐開（無固定 1920×1080、無 transform 縮放、無 letterbox）。VFX/提示/游標光點掛在 body（舞台外）→ getBoundingClientRect 取真實視窗座標、天生相容。 -->
     <div id="app-stage">
 
-    <!-- 創角畫面 -->
-    <!-- 👇 修改 1：將寬度放大為 max-w-5xl 以容納三欄排版 -->
-    <div id="creation-screen" class="w-[1000px] panel p-8 flex flex-col gap-6 z-50 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 shadow-2xl" style="background: rgba(42, 44, 46, 0.78); backdrop-filter: blur(6px);">
-        <div class="text-center border-b border-slate-700 pb-4">
+    <!-- 創角畫面（🎨 v3.0.40 起始UI：310.png 固定底圖＋273~300 左下逐幀動畫·標題/選單/版號絕對定位於 4:3 藝術舞台上） -->
+    <div id="creation-screen">
+      <div id="login-art-stage">
+        <img id="login-bg-image" src="public/assets/login/310.png" alt="登入畫面背景">
+        <img id="login-anim-image" src="public/assets/login/273.png" alt="登入畫面動畫">
+        <div id="login-title-layer" class="text-center">
             <h1 class="text-4xl font-bold text-yellow-400 mb-2">放置天堂 - 以血為盟</h1>
             <p class="text-base text-slate-400">創造您的角色並開始冒險</p>
         </div>
-        
+
         <div id="main-menu" class="flex flex-col gap-5 items-center my-12">
             <button onclick="openSlotSelect('new')" class="btn text-xl w-72 py-4 bg-blue-700 hover:bg-blue-600 border-blue-500">新遊戲 (創建角色)</button>
             <button onclick="openSlotSelect('load')" id="btn-load" class="btn text-xl w-72 py-4 bg-emerald-700 hover:bg-emerald-600 border-emerald-500">載入遊戲進度</button>
@@ -52,6 +54,13 @@
             <button onclick="toggleVfxNumPref()" id="btn-vfxnum-toggle" class="btn text-base w-72 py-2.5 bg-slate-700 hover:bg-slate-600 border-slate-500">🔢 傷害數字：開啟</button>
             <p class="text-xs text-slate-500 -mt-2 w-72 text-center">效果較弱/卡頓的裝置可關閉戰鬥特效；「傷害數字」可獨立關閉、其餘特效保留（開始前設定，遊戲中不再提供）</p>
         </div>
+
+        <div id="login-meta-layer">
+            <!-- 🏷️ 版本號（由 js/14 window.onload 依 GAME_VERSION 填入；此處 v2.4.0 僅為 JS 失效時的後備文字） -->
+            <div id="login-version" class="text-center text-sm text-slate-300 font-medium tracking-wide select-none">v2.4.0</div>
+            <div id="login-disclaimer" class="text-center text-xs text-slate-400 leading-relaxed mx-auto">本遊戲為非官方免費同人作品，絕無營利意圖；遊戲內圖片與音樂版權歸原權利方 NCSOFT 所有，其餘程式為獨立開發，嚴禁商業販售。</div>
+        </div>
+      </div>
 
         <div id="slot-select-panel" class="hidden flex flex-col gap-4 items-center my-8 w-full">
             <h2 id="slot-select-title" class="text-2xl font-bold text-yellow-400">選擇存檔位</h2>
@@ -122,14 +131,39 @@
                     <button onclick="startGame()" id="btn-start" class="btn w-3/4 py-2.5 font-bold text-lg text-white shadow-lg" disabled>開始冒險</button>
                 </div>
             </div>
-            
+
         </div>
 
-        <!-- 🏷️ 版本號（由 js/14 window.onload 依 GAME_VERSION 填入；此處 v2.4.0 僅為 JS 失效時的後備文字） -->
-        <div id="login-version" class="text-center text-sm text-slate-300 font-medium tracking-wide select-none mt-1">v2.4.0</div>
-        <!-- ⚖️ 免責聲明（版號下方·非官方同人作品·無營利意圖） -->
-        <div id="login-disclaimer" class="text-center text-xs text-slate-500 leading-relaxed mx-auto px-4 mt-2" style="max-width:28rem;">本遊戲為非官方免費同人作品，絕無營利意圖；遊戲內圖片與音樂版權歸原權利方 NCSOFT 所有，其餘程式為獨立開發，嚴禁商業販售。</div>
     </div>
+
+    <script>
+      // 登入頁逐幀動畫：273.png～300.png，使用相對路徑，GitHub Pages 可直接部署。
+      (function(){
+        var first=273,last=300,frame=first,lastAt=0,stepMs=90,ready=false;
+        var base='public/assets/login/';
+        // 首頁 BGM 優先；頁面載入完成後再逐張載入動畫，避免 28 張圖片同時與音樂搶讀取／解碼資源。
+        function preloadFrame(n){
+          if(n>last){ready=true;return;}
+          var p=new Image();
+          p.onload=p.onerror=function(){preloadFrame(n+1);};
+          p.src=base+n+'.png';
+        }
+        function beginPreload(){setTimeout(function(){preloadFrame(first+1);},500);}
+        if(document.readyState==='complete') beginPreload();
+        else window.addEventListener('load',beginPreload,{once:true});
+        function animateLogin(now){
+          var screen=document.getElementById('creation-screen');
+          var img=document.getElementById('login-anim-image');
+          if(ready&&img&&screen&&!screen.classList.contains('hidden')&&now-lastAt>=stepMs){
+            frame=frame>=last?first:frame+1;
+            img.src=base+frame+'.png';
+            lastAt=now;
+          }
+          requestAnimationFrame(animateLogin);
+        }
+        requestAnimationFrame(animateLogin);
+      })();
+    </script>
 
     <!-- 遊戲主畫面 -->
     <div id="game-screen" class="hidden flex gap-4">
@@ -146,7 +180,7 @@
         <div id="col-left" class="w-[340px] flex flex-col gap-4">
             <!-- 新增了 id="status-panel"，並加入去底色與加深背景的樣式確保文字可讀 -->
             <div id="status-panel" class="panel bg-cover bg-top bg-no-repeat" style="background-blend-mode: multiply; background-color: rgba(30, 41, 59, 0.85);">
-                <div class="panel-header text-center flex justify-between bg-transparent border-b border-slate-700"><span class="flex items-center shrink-0"><span id="st-classname">職業</span><span id="classic-badge" class="hidden font-bold ml-1" style="color:#fbbf24;text-shadow:0 0 5px rgba(251,191,36,0.7);font-size:0.85rem;line-height:1;" title="經典模式（硬核）：物品掉落 ×1/10、經驗減半、金幣剩一般模式的 1/2、死亡損失該等級 10% 最大經驗（不降等）">⚔經典</span><span id="traditional-badge" class="hidden font-bold ml-1" style="color:#c4b5fd;text-shadow:0 0 5px rgba(196,181,253,0.7);font-size:0.85rem;line-height:1;" title="傳統模式（經典之上）：所有裝備無強化、改由掉落自帶強化值、怪物/黑市無施法卷軸、倉庫與角色獨立">🏛️傳統</span></span><span id="victory-badge" class="hidden font-bold" style="color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.85);font-size:1.4rem;line-height:1;align-items:center;gap:0.15rem;" title="攻城獲勝期間：全商店8折、開放獲勝城池"><span style="font-size:1.05em;line-height:1;position:relative;top:-0.08em;">👑</span><span style="line-height:1;">攻城獲勝</span></span><span id="st-class" class="text-white text-lg font-bold cursor-pointer hover:bg-slate-700/50 rounded px-2 inline-block min-w-[2.5rem] text-right" title="點擊此處修改名稱" onclick="startEditName()"></span></div>
+                <div class="panel-header text-center flex justify-between bg-transparent border-b border-slate-700"><span class="flex items-center shrink-0"><span id="st-classname">職業</span><span id="classic-badge" class="hidden font-bold ml-1" style="color:#fbbf24;text-shadow:0 0 5px rgba(251,191,36,0.7);font-size:0.85rem;line-height:1;" title="經典模式（硬核）：物品掉落 ×1/10、經驗減半、金幣剩一般模式的 1/2、死亡損失該等級 5% 最大經驗（不降等）">⚔經典</span><span id="traditional-badge" class="hidden font-bold ml-1" style="color:#c4b5fd;text-shadow:0 0 5px rgba(196,181,253,0.7);font-size:0.85rem;line-height:1;" title="傳統模式（經典之上）：所有裝備無強化、改由掉落自帶強化值、怪物/黑市無施法卷軸、倉庫與角色獨立">🏛️傳統</span></span><span id="victory-badge" class="hidden font-bold" style="color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.85);font-size:1.4rem;line-height:1;align-items:center;gap:0.15rem;" title="攻城獲勝期間：全商店8折、開放獲勝城池"><span style="font-size:1.05em;line-height:1;position:relative;top:-0.08em;">👑</span><span style="line-height:1;">攻城獲勝</span></span><span id="st-class" class="text-white text-lg font-bold cursor-pointer hover:bg-slate-700/50 rounded px-2 inline-block min-w-[2.5rem] text-right" title="點擊此處修改名稱" onclick="startEditName()"></span></div>
                 <div class="p-4 space-y-3 text-base">
                     <div class="flex justify-between text-slate-400 border-b border-slate-700 pb-2"><span>等級</span> <span class="text-white font-bold text-xl" id="st-lv">1</span></div>
                     <div class="flex justify-between text-slate-400"><span>防禦 (AC)</span> <span class="text-white font-bold" id="st-ac">10</span></div>
@@ -204,7 +238,7 @@
         <button onclick="revive()" id="btn-revive" class="hidden bg-red-800 hover:bg-red-700 px-6 py-1.5 text-white font-bold border border-red-500 rounded anim-flash text-base shadow-md">祈求復活</button>
         <button onclick="reviveInPlace()" id="btn-revive-inplace" class="hidden bg-yellow-700 hover:bg-yellow-600 px-6 py-1.5 text-white font-bold border border-yellow-500 rounded anim-flash text-base shadow-md">原地復活</button>
         <button onclick="playerTeleport()" id="btn-teleport" class="hidden bg-fuchsia-800 hover:bg-fuchsia-700 px-3 py-1 text-white font-bold border border-fuchsia-500 rounded text-sm shadow-md whitespace-nowrap min-w-[3.25rem] text-center" title="傳送術／瞬間移動卷軸（於對應地圖可進入隱藏狩獵區域）">瞬移</button>
-        <button onclick="toggleGameSpeed()" id="btn-speed" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 text-white border border-slate-500 rounded text-sm shadow-md" title="遊戲速度切換（1x / 2x / 3x）"><span id="speed-icon">⚙</span><span id="speed-label" class="ml-1 text-xs">1x</span></button>
+        <button onclick="toggleGameSpeed()" id="btn-speed" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 text-white border border-slate-500 rounded text-sm shadow-md" title="遊戲速度切換（1x / 3x / 9x）"><span id="speed-icon">⚙</span><span id="speed-label" class="ml-1 text-xs">1x</span></button>
         <button onclick="returnToTown()" id="btn-return-town" class="bg-emerald-800 hover:bg-emerald-700 px-3 py-1 text-white font-bold border border-emerald-500 rounded text-sm shadow-md whitespace-nowrap min-w-[3.25rem] text-center">回村</button>
         <select id="map-category" class="bg-slate-800 border border-slate-600 text-white px-3 py-1.5 text-base rounded outline-none" onchange="onMapCategoryChange()">
             <option value="village">村莊</option>
@@ -512,12 +546,13 @@
 <script src="js/Mod/22-map-modifiers.js"></script>
 <script src="js/Mod/23-anti-cheat.js"></script>
 <script src="js/Mod/24-monster-skills.js"></script>
-<script src="js/Mod/26-qol-enhance.js"></script><!-- 🔧 QoL 增強模組：傭兵AI/套裝篩選/重雇保留設定 -->
-<script src="js/Mod/27-afk-offline.js"></script><!-- 🌙 離線掛機模組：關閉瀏覽器自動結算收益（上限12小時） -->
-<script src="js/Mod/28-version-check.js"></script><!-- 🔄 原作者版本檢查：GitHub API 查最新 commit，有更新提示 -->
-<script src="js/Mod/29-merc-support.js"></script><!-- 🛡️ 傭兵支援模組：傭兵對隊友施放增益法術（血盟判定/獨立持續時間） -->
-<script src="js/Mod/30-merc-fix.js"></script><!-- 🔧 傭兵修復模組：弱點精通判定/招募收藏轉發（暫時補丁） -->
-<script src="js/Mod/31-map-mod-ally.js"></script><!-- 🔥 地圖詞綴傭兵套用：後綴debuff套用至傭兵（中毒/地面/衰弱/防降等） -->
-<script src="js/Mod/00-optimizer.js"></script><!-- 🚀 效能優化模組：補跑守護/節流/wrapper偵測 -->
+<script src="js/Mod/26-qol-enhance.js"></script>
+<script src="js/Mod/27-afk-offline.js"></script>
+<script src="js/Mod/28-version-check.js"></script>
+<script src="js/Mod/29-merc-support.js"></script>
+<script src="js/Mod/30-merc-fix.js"></script>
+<script src="js/Mod/31-map-mod-ally.js"></script>
+<script src="js/Mod/32-speed-toggle.js"></script>
+<script src="js/Mod/00-optimizer.js"></script>
 </body>
 </html>

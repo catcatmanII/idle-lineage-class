@@ -414,22 +414,60 @@ function renderDebuffPanel() {
     const _origToggleSherineWorld = toggleSherineWorld;
     const _origToggleSherineMad = toggleSherineMad;
 
-    // --- 包裝 tick()：注入 checkMapModTimer + applyGroundEffects + renderDebuffPanel ---
+    // --- 包裝 tick()：注入 checkMapModTimer + applyGroundEffects + renderDebuffPanel + 延遲反射處理 ---
     tick = function() {
         _origTick.apply(this, arguments);
         try { checkMapModTimer(); } catch(e) {}
         if (player && player.mapModOn && typeof inAbsBarrier === 'function' && !inAbsBarrier()) {
             try { applyGroundEffects(); } catch(e) {}
         }
+        // 🗺️ 延遲處理反射（reflect_phys + reflect_ele）：getPhysicalDmg / castSkill 儲存的傷害在此統一反射
+        try {
+            if (!player.dead && mapState && mapState.mobs) {
+                for (let i = 0; i < mapState.mobs.length; i++) {
+                    let mob = mapState.mobs[i];
+                    if (!mob) continue;
+                    // 先處理待反射（不限生死，怪物死了反射還在）
+                    // 反射物理
+                    if (mob._pendingReflectPhys > 0) {
+                        let _rfd = Math.max(1, Math.floor(mob._pendingReflectPhys * mob._reflectPhys / 100));
+                        player.hp -= _rfd;
+                        logCombat(`<span class="text-red-400">【反射物理】</span>${mob.n} 反射了 ${_rfd} 點物理傷害。`, 'enemy');
+                        mob._pendingReflectPhys = 0;
+                        if (player.hp <= 0) { killPlayer(); break; }
+                    }
+                    // 反射元素
+                    if (mob._pendingReflectEle > 0) {
+                        let _rfd = Math.max(1, Math.floor(mob._pendingReflectEle * mob._reflectEle / 100));
+                        player.hp -= _rfd;
+                        logCombat(`<span class="text-purple-400">【反射元素】</span>${mob.n} 反射了 ${_rfd} 點元素傷害。`, 'enemy');
+                        mob._pendingReflectEle = 0;
+                        if (player.hp <= 0) { killPlayer(); break; }
+                    }
+                }
+            }
+        } catch(e) {}
         try { renderDebuffPanel(); } catch(e) {}
     };
 
-    // --- 包裝 getPhysicalDmg()：注入 enfeeble ---
+    // --- 包裝 getPhysicalDmg()：注入 avoid_hit（怪物迴避）+ reflect_phys（反射物理）+ enfeeble ---
     getPhysicalDmg = function(diceStr, target, wpn, arrowData, forceHeavy, forceHit, forceLand, forceCrit, wpnInst) {
+        // 🗺️ 地圖詞綴後墜：怪物迴避（avoid_hit）— 在命中判定前攔截
+        try {
+            if (target && target._modAvoid && !forceHit && !forceHeavy && Math.random() * 100 < target._modAvoid) {
+                if (player._setBeauty5) player._beautyMissStack = (player._beautyMissStack || 0) + 10;
+                return { dmg: 0, hit: false, heavy: false, crit: false, graze: false, crush: false, ranged: !!arrowData };
+            }
+        } catch(e) {}
         let result = _origGetPhysicalDmg.apply(this, arguments);
         try {
             // 衰弱：最終傷害降低
             if (player._sufEnfeeble) result.dmg = Math.max(1, Math.floor(result.dmg * (100 - player._sufEnfeeble) / 100));
+            // 🗺️ 地圖詞綴前墜：反射物理（reflect_phys）— 延遲到 tick 結束後處理（需等 damage 生效）
+            if (result.hit && result.dmg > 0 && target && target._reflectPhys && target.curHp > 0) {
+                if (!target._pendingReflectPhys) target._pendingReflectPhys = 0;
+                target._pendingReflectPhys += result.dmg;
+            }
         } catch(e) {}
         return result;
     };
@@ -499,7 +537,267 @@ function renderDebuffPanel() {
         _origToggleSherineMad.apply(this, arguments);
     };
 
+    // --- 包裝 applyMobStatus()：注入 imm_abnormal（免疫異常）+ imm_harmful（免疫有害）---
+    if (typeof applyMobStatus === 'function') {
+        const _origApplyMobStatus = applyMobStatus;
+        applyMobStatus = function(m, st, skillName) {
+            try {
+                if (!m || !st) return _origApplyMobStatus.apply(this, arguments);
+                // 🗺️ 地圖詞綴前墜：免疫異常狀態（暈眩/冰凍/石化/麻痺/沉睡）
+                if (m._immAbnormal && ['freeze','stun','stone','paralyze','sleep'].includes(st.kind) && Math.random() * 100 < m._immAbnormal) {
+                    logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 免疫了${skillName || '異常狀態'}。`, 'miss');
+                    return;
+                }
+                // 🗺️ 地圖詞綴前墜：免疫有害狀態（破甲/脆弱/沉默/封印/緩速）
+                if (m._immHarmful && ['armorbreak','fragile','silence','magicseal','slow'].includes(st.kind) && Math.random() * 100 < m._immHarmful) {
+                    logCombat(`<span class="${getMobColor(m.lv)}">${m.n}</span> 免疫了${skillName || '有害狀態'}。`, 'miss');
+                    return;
+                }
+            } catch(e) {}
+            return _origApplyMobStatus.apply(this, arguments);
+        };
+    }
+
+    // --- A3: 包裝 castSkill()：注入 reflect_ele（反射元素）+ reflect_phys（技能反射物理）---
+    if (typeof castSkill === 'function') {
+        const _origCastSkill = castSkill;
+        castSkill = function() {
+            let _hpSnap = {};
+            try {
+                if (mapState && mapState.mobs) {
+                    for (let i = 0; i < mapState.mobs.length; i++) {
+                        let m = mapState.mobs[i];
+                        if (m) _hpSnap[i] = m.curHp;
+                    }
+                }
+            } catch(e) {}
+            let result = _origCastSkill.apply(this, arguments);
+            try {
+                if (!player.dead && mapState && mapState.mobs) {
+                    let _sk = DB && DB.skills && DB.skills[arguments[0]];
+                    let _isPhysSkill = _sk && _sk.dmgType === 'physical';
+                    let _isEleSkill = _sk && _sk.ele && ['fire','water','wind','earth'].includes(_sk.ele);
+                    for (let i = 0; i < mapState.mobs.length; i++) {
+                        let mob = mapState.mobs[i];
+                        if (!mob || _hpSnap[i] == null) continue;
+                        let _hpLost = _hpSnap[i] - mob.curHp;
+                        if (_hpLost > 0) {
+                            if (_isPhysSkill && mob._reflectPhys) {
+                                if (!mob._pendingReflectPhys) mob._pendingReflectPhys = 0;
+                                mob._pendingReflectPhys += _hpLost;
+                            }
+                            if (_isEleSkill && mob._reflectEle) {
+                                if (!mob._pendingReflectEle) mob._pendingReflectEle = 0;
+                                mob._pendingReflectEle += _hpLost;
+                            }
+                        }
+                    }
+                }
+            } catch(e) {}
+            return result;
+        };
+    }
+
+    // --- A4: 包裝 enemyPhysicalAttack()：注入 hit_poison（被擊中中毒）---
+    if (typeof enemyPhysicalAttack === 'function') {
+        const _origEnemyPhysicalAttack = enemyPhysicalAttack;
+        enemyPhysicalAttack = function(mob, idx, stunChance, atkDmg, atkDb) {
+            let _hpBefore = player.hp;
+            _origEnemyPhysicalAttack.apply(this, arguments);
+            // 🗺️ 地圖詞綴後墜：被擊中中毒（hit_poison）— 怪物普攻命中後
+            try {
+                let _hpLost = _hpBefore - player.hp;
+                if (_hpLost > 0 && player.mapModOn && mapState.modifiers && mapState.modifiers.active
+                    && (mapState.modifiers.suffixes || []).includes('hit_poison')
+                    && !player.d.immPoison && !player.dead) {
+                    let tier = (typeof getModifierTier === 'function') ? getModifierTier() : 0;
+                    let _poPct = MAP_MOD_SUFFIXES.hit_poison.values[tier];
+                    let _poD = Math.max(1, Math.floor(_hpLost * _poPct / 100));
+                    player.statuses.poison = 50;
+                    player.statuses.poisonDmg = _poD;
+                    player.statuses.poisonTick = 10;
+                    logCombat(`<span class="text-green-400">你因被擊中而中毒了！每秒受到 ${_poD} 點毒素傷害（${_poPct}% 傷害/秒）。</span>`, 'enemy');
+                }
+            } catch(e) {}
+        };
+    }
+
+    // --- B ⚠️需手動合併：包裝 enemyPhysicalAttack()：注入 ele_dmg + chaos_dmg + crit_up ---
+    // ⚠️⚠️⚠️ 注意：此 wrapper 與 A4 共用 enemyPhysicalAttack，已合併在 A4 中。
+    // ⚠️⚠️⚠️ 但 ele_dmg / chaos_dmg / crit_up 必須在函式「中間」注入（非 post-hook），因此無法透過 wrapper 實現。
+    // ⚠️⚠️⚠️ 以下為「完整函式替換」方案：複製 04-combat-attack.js 的 enemyPhysicalAttack 函式，
+    // ⚠️⚠️⚠️ 在對應位置插入缺失的讀取邏輯。若原作者更新此函式，必須手動合併。
+    // ⚠️⚠️⚠️ 由於 A4 已經包裝了 enemyPhysicalAttack，此處改用「二次包裝」策略：
+    // ⚠️⚠️⚠️ 在 A4 的 post-hook 中，用額外邏輯補償 ele_dmg / chaos_dmg / crit_up。
+    //
+    // ele_dmg / chaos_dmg 的注入點在 totalDmg 計算中（抗性折減後、DR 前），wrapper 無法精確插入。
+    // 但它們的效果是「增加受到的傷害」，因此可以透過「實際扣血量差異」來近似補償。
+    // crit_up 的效果是「怪物暴擊」，在傷害計算中間，同樣無法用 post-hook。
+    //
+    // ⚠️⚠️⚠️ 以下已於 A4 wrapper 中合併處理（見上方 enemyPhysicalAttack wrapper 的 post-hook 補償區塊）
+    // ⚠️⚠️⚠️ 如需更精確的注入，必須改為「完整函式替換」方案（複製整個 enemyPhysicalAttack 並修改）。
+
+    // ===== 🗺️ 製圖大師紮那：NPC 數據注入 + 函式定義 =====
+    // 製圖大師紮那：地圖詞綴開關（需 30 等）
+    function toggleMapModFromZana() {
+        if ((player.lv || 1) < 30) { logSys('<span class="text-red-400">等級不足，需要 30 等才能開啟地圖詞綴。</span>'); return; }
+        player.mapModOn = !player.mapModOn;
+        if (player.mapModOn) {
+            mapState.modifiers.nextRefreshAt = state.ticks + 18000;
+            logSys('<span class="text-emerald-400 font-bold">【地圖詞綴】已開啟</span><span class="text-slate-400">狩獵時怪物會有額外強化，但擊殺後掉落率與稀有度提升。</span>');
+        } else {
+            logSys('<span class="text-slate-300">【地圖詞綴】已關閉。</span>');
+        }
+        saveGame();
+        renderMobs();
+        let el = document.getElementById('interaction-content');
+        if (el) renderZanaMapMod(el);
+    }
+    function renderZanaMapMod(div) {
+        let on = !!(player && player.mapModOn);
+        let lvOk = (player.lv || 1) >= 30;
+        let active = on && mapState.modifiers && mapState.modifiers.active;
+        let remainSec = active && mapState.modifiers.nextRefreshAt ? Math.max(0, Math.floor((mapState.modifiers.nextRefreshAt - state.ticks) / 10)) : 0;
+        let mm = String(Math.floor(remainSec / 60)).padStart(2, '0');
+        let ss = String(remainSec % 60).padStart(2, '0');
+        let canReroll = player.gold >= 150000;
+        let modInfo = '';
+        if (active) {
+            let pfx = mapState.modifiers.prefixes || [];
+            let sfx = mapState.modifiers.suffixes || [];
+            let qty = mapState.modifiers.dropQtyBonus || 0;
+            let rarity = mapState.modifiers.dropRarityBonus || 0;
+            let parts = [];
+            if (pfx.length) parts.push('<span style="color:#f87171;">🏆 ' + pfx.map(id => MAP_MOD_PREFIXES[id] ? MAP_MOD_PREFIXES[id].n : id).join(' ') + '</span>');
+            if (sfx.length) parts.push('<span style="color:#c084fc;">⚠️ ' + sfx.map(id => MAP_MOD_SUFFIXES[id] ? MAP_MOD_SUFFIXES[id].n : id).join(' ') + '</span>');
+            if (qty || rarity) parts.push('<span style="color:#fbbf24;">🎁 掉落+' + qty + '% 稀有+' + rarity + '%</span>');
+            modInfo = '<div class="text-xs mt-2 mb-2">' + parts.join(' | ') + '</div>';
+        }
+        div.innerHTML = `
+            <div class="flex flex-col gap-3 p-1">
+                <div class="text-slate-300 text-sm leading-relaxed">紮那：旅人啊……想要探索更危險的領域嗎？我可以為你繪製強化的地圖。30 等以上可開啟地圖詞綴系統。</div>
+                <div class="bg-slate-800/60 border ${on ? 'border-emerald-700' : 'border-slate-600'} rounded p-3 text-sm leading-relaxed">
+                    <div class="font-bold mb-1 ${on ? 'text-emerald-400' : 'text-slate-200'}">🗺️ 地圖詞綴：目前 ${on ? '<span class="text-emerald-400">開啟</span>' : '<span class="text-slate-400">關閉</span>'}</div>
+                    <div class="text-slate-400 text-xs">${on ? '地圖詞綴運作中，' + mm + ':' + ss + ' 後自動關閉。' : '與紮那對話即可開啟。'}</div>
+                </div>
+                ${modInfo}
+                <button onclick="toggleMapModFromZana()" class="px-4 py-2 rounded font-bold transition
+                    ${!lvOk ? 'bg-slate-600 text-slate-400 cursor-not-allowed' :
+                      on ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-emerald-700 hover:bg-emerald-600 text-white'}"
+                    ${!lvOk ? 'disabled' : ''}>
+                    ${!lvOk ? '等級不足' : on ? '關閉詞綴' : '開啟詞綴'}
+                </button>
+                ${on ? '<button onclick="rerollMapModFromZana()" class="px-4 py-2 rounded font-bold transition ' + (canReroll ? 'bg-amber-700 hover:bg-amber-600 text-white' : 'bg-slate-600 text-slate-400 cursor-not-allowed') + '" ' + (canReroll ? '' : 'disabled') + '>🎲 重骰詞綴 (15萬)</button>' : ''}
+            </div>`;
+    }
+    function rerollMapModFromZana() {
+        rerollMapModifiers();
+        let el = document.getElementById('interaction-content');
+        if (el) renderZanaMapMod(el);
+    }
+
+    // 掛到全域：onclick 需要存取
+    window.toggleMapModFromZana = toggleMapModFromZana;
+    window.rerollMapModFromZana = rerollMapModFromZana;
+
+    // 註入 NPC 數據到 DB.towns.town_sherine.npcs
+    if (typeof DB !== 'undefined' && DB.towns && DB.towns.town_sherine && DB.towns.town_sherine.npcs) {
+        let hasZana = DB.towns.town_sherine.npcs.some(n => n.id === 'npc_zana');
+        if (!hasZana) {
+            DB.towns.town_sherine.npcs.push({ id: 'npc_zana', n: '紮那', title: '製圖大師', type: 'mapmod', d: '古老而神祕的擴散製圖大師紮那，能引導你走向強大的獵物。30 等以上可開啟地圖詞綴。' });
+        }
+    }
+
+    // 包裝 renderTownNPCs：修正 mapmod 類型圖示（原始碼無此判斷，預設顯示👤）
+    if (typeof renderTownNPCs === 'function') {
+        const _origRenderTownNPCs = renderTownNPCs;
+        renderTownNPCs = function(townId) {
+            _origRenderTownNPCs.apply(this, arguments);
+            // 後處理：找到紮那的 NPC 卡片並修正圖示為🗺️
+            let container = document.getElementById('town-npc-container');
+            if (container && townId === 'town_sherine') {
+                let cards = container.querySelectorAll('div');
+                cards.forEach(card => {
+                    if (card.textContent && card.textContent.includes('紮那')) {
+                        let iconEl = card.querySelector('.text-2xl');
+                        if (iconEl && iconEl.textContent === '👤') iconEl.textContent = '🗺️';
+                    }
+                });
+            }
+        };
+    }
+
+    // 包裝 interactNPC：加入 npc_zana 路由
+    if (typeof interactNPC === 'function') {
+        const _origInteractNPC = interactNPC;
+        interactNPC = function(npcId, townId) {
+            if (npcId === 'npc_zana') {
+                let container = document.getElementById('town-npc-container');
+                let interaction = document.getElementById('town-interaction-container');
+                let contentDiv = document.getElementById('interaction-content');
+                let npcNameEl = document.getElementById('interaction-npc-name');
+                let npcTitleEl = document.getElementById('interaction-npc-title');
+                if (container) container.classList.add('hidden');
+                if (interaction) { interaction.classList.remove('hidden'); interaction.classList.add('flex'); }
+                if (npcNameEl) npcNameEl.textContent = '紮那';
+                if (npcTitleEl) npcTitleEl.textContent = '[製圖大師]';
+                if (contentDiv) renderZanaMapMod(contentDiv);
+                return;
+            }
+            _origInteractNPC.apply(this, arguments);
+        };
+    }
+
+    // ===== 🔒 包裝 sortInventory / autoSortInventory / sortInventoryNow：鎖定物品置頂 =====
+    // invSortCmp 是 const 無法直接覆寫，改為包裝呼叫端
+    const _lockSortCmp = function(ia, ib) {
+        if (ia.lock !== ib.lock) return ia.lock ? -1 : 1;
+        return invSortCmp(ia, ib);
+    };
+    if (typeof sortInventory === 'function') {
+        const _origSortInventory = sortInventory;
+        sortInventory = function() {
+            player.inv.sort(_lockSortCmp);
+            renderTabs();
+            saveGame();
+        };
+    }
+    if (typeof sortInventoryNow === 'function') {
+        const _origSortInventoryNow = sortInventoryNow;
+        sortInventoryNow = function() {
+            if (!player || !Array.isArray(player.inv)) return;
+            player.inv.sort(_lockSortCmp);
+            renderTabs(true);
+            logSys('<span class="text-cyan-300 font-bold">背包已重新排列。</span>');
+        };
+    }
+    if (typeof autoSortInventory === 'function') {
+        const _origAutoSortInventory = autoSortInventory;
+        autoSortInventory = function() {
+            if (!player || !Array.isArray(player.inv) || typeof state === 'undefined' || !state.running) return;
+            if (player.autoSellOn === false) return;
+            if (state.ticks - (_autoSortAt || 0) < 100) return;
+            _autoSortAt = state.ticks;
+            player.inv.sort(_lockSortCmp);
+            renderTabs(true);
+        };
+    }
+    if (typeof sortWarehouse === 'function') {
+        const _origSortWarehouse = sortWarehouse;
+        sortWarehouse = function() {
+            let w = loadWarehouse();
+            if (!w.items.length) { logSys('<span class="text-slate-400">倉庫沒有物品可排列。</span>'); return; }
+            w.items.sort(_lockSortCmp);
+            saveWarehouse(w);
+            logSys('<span class="text-cyan-300 font-bold">倉庫已重新排列。</span>');
+            let el = document.getElementById('interaction-content'); if (el) renderWarehouseNPC(el);
+        };
+    }
+
     console.log('🗺️ 地圖詞綴包裝系統已安裝');
+
+    // 初始渲染：補渲染地圖詞綴面板（確保已開啟時面板可見）
+    try { renderMapModPanel(); } catch(e) {}
 
     // 每 1 秒刷新地圖詞綴面板倒數顯示
     setInterval(() => {

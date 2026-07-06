@@ -296,16 +296,14 @@ function killMob(idx) {
     // === 怪物專屬掉落（依「怪物掉落資料.md」）：每樣物品各自獨立判定一次 ===
     let dropList = _kbNoReward ? [] : (MOB_DROPS[mob.n] || []);   // 🔧 魔獸軍王之室：除頭目外不掉落物品
     let _dropBase = (mob._grace ? 10 : (mob._sherine ? (mob._sherineMad ? 5 : 3) : 1));   // 🔮 席琳的世界 ×3（瘋狂×5）／恩賜怪 ×10（不含經典 ×1/10，供試煉道具用）
-    let _rarityMult = 1 + (mapState.modifiers.dropRarityBonus || 0) / 100;   // 🗺️ 地圖詞綴：稀有度加成
-    let _dropMult = _dropBase * classicDropMult() * _rarityMult;   // 🎮 經典模式：×1/10（涵蓋怪物掉落表／黑暗武器／黑精靈水晶／祝福卷軸／區域額外掉落；試煉道具走 _dropBase×trialItemDropMult 不受 ×1/10）
-    let _mapQtyBonus = Math.floor((mapState.modifiers.dropQtyBonus || 0) / 100);   // 🗺️ 地圖詞綴：掉落量加成(每100%多掉1個)
+    let _dropMult = _dropBase * classicDropMult();   // 🎮 經典模式：×1/10（涵蓋怪物掉落表／黑暗武器／黑精靈水晶／祝福卷軸／區域額外掉落；試煉道具走 _dropBase×trialItemDropMult 不受 ×1/10）
     dropList.forEach(entry => {
         let itemId = entry[0];
         let ratePct = entry[1];               // 機率(%)
         if(!DB.items[itemId]) return;          // 該物品不存在於資料庫則略過
         if(trialDropBlocked(itemId)) return;   // 🔒 試煉兌換道具：僅本職擊殺才掉（非本職直接跳過）
         let _clMult = (mob.n === '卡瑞' && itemId === 'wpn_dragonslayer') ? 1 : trialItemDropMult(itemId);   // 🔧 v2.6.75 卡瑞·屠龍劍：經典模式仍維持 100%（獎勵已綁「擊殺消耗四任務道具」的成本·不受 ×1/10）
-        if(Math.random() < (ratePct * _dropBase * _clMult * _rarityMult) / 100) gainItem(itemId, 1 + _mapQtyBonus);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
+        if(Math.random() < (ratePct * _dropBase * _clMult) / 100) gainItem(itemId, 1);   // 🎮 試煉道具不受經典 ×1/10（trialItemDropMult 回 1）
     });
 
     // === 🔧 萬能藥稀有掉落：等級 40 以上、非血盟。一般敵人 0.01%；頭目 1%（排除夢幻之島頭目），擊殺後隨機掉落 6 種萬能藥之一 ===
@@ -344,27 +342,27 @@ function killMob(idx) {
     }
     // === 🔧 黑暗妖精武器掉落 ===
     { let _dwd = (typeof DARK_WEAPON_DROPS !== 'undefined') ? DARK_WEAPON_DROPS[mob.n] : null;
-      if (_dwd) _dwd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1 + _mapQtyBonus); }); }
+      if (_dwd) _dwd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
     // === 🔧 三階黑暗精靈水晶掉落 ===
     { let _dcd = (typeof DARK_CRYSTAL_DROPS !== 'undefined') ? DARK_CRYSTAL_DROPS[mob.n] : null;
-      if (_dcd) _dcd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1 + _mapQtyBonus); }); }
+      if (_dcd) _dcd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
     // === 🐉 龍騎士掉落（任務道具／書板／鎖鏈劍）：僅龍騎士主玩家擊殺時判定 ===
     { let _drd = (typeof DRAGON_DROPS !== 'undefined') ? DRAGON_DROPS[mob.n] : null;   // 🐉 龍騎士掉落表改為全職可掉（書板/鎖鏈劍·就算不能裝備也掉）；妖魔搜索文件等試煉道具由 trialDropBlocked 限定 dragon
-      if (_drd) _drd.forEach(e => { if (DB.items[e[0]] && !trialDropBlocked(e[0]) && Math.random() < (e[1] * _dropBase * trialItemDropMult(e[0])) / 100) gainItem(e[0], 1 + _mapQtyBonus); }); }   // 🎮 龍騎士試煉道具不受經典 ×1/10
+      if (_drd) _drd.forEach(e => { if (DB.items[e[0]] && !trialDropBlocked(e[0]) && Math.random() < (e[1] * _dropBase * trialItemDropMult(e[0])) / 100) gainItem(e[0], 1); }); }   // 🎮 龍騎士試煉道具不受經典 ×1/10
     // === ⚔️ 戰士技能印記掉落（全職可掉·僅戰士可學）===
     { let _wrd = (typeof WARRIOR_DROPS !== 'undefined') ? WARRIOR_DROPS[mob.n] : null;
-      if (_wrd) _wrd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1 + _mapQtyBonus); }); }
+      if (_wrd) _wrd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
     // 🔮 記憶水晶掉落（幻術士法術書·全職可掉，獨立 roll·與 MOB_DROPS 並存）
     { let _memd = (typeof MEM_DROPS !== 'undefined') ? MEM_DROPS[mob.n] : null;
-      if (_memd) _memd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1 + _mapQtyBonus); }); }
+      if (_memd) _memd.forEach(e => { if (DB.items[e[0]] && Math.random() < (e[1] * _dropMult) / 100) gainItem(e[0], 1); }); }
     // 🎴 卡片掉落（血盟標籤以外·一般＝經典機率·不乘 classicDropMult·一律進背包不自動賣）
     if (typeof rollCardDrops === 'function') rollCardDrops(mob);
 
     // === 40等以上 BOSS（夢幻之島 + 攻城區/siegeEnemy 除外）：賦予祝福卷軸稀有掉落，各自獨立判定 ===
     if (mob.boss && mob.lv >= 40 && mapState.current !== 'dream_island' && !isSiegeArea(mapState.current) && !mob.siegeEnemy) {
-        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_wpn', 1 + _mapQtyBonus);   // 0.1%  賦予武器祝福卷軸（🔮席琳×3）
-        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_arm', 1 + _mapQtyBonus);   // 0.1%  賦予盔甲祝福卷軸
-        if (Math.random() < 0.0001 * _dropMult) gainItem('new_item_bless_acc', 1 + _mapQtyBonus);   // 0.01% 賦予飾品祝福卷軸
+        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_wpn', 1);   // 0.1%  賦予武器祝福卷軸（🔮席琳×3）
+        if (Math.random() < 0.001 * _dropMult)  gainItem('new_item_bless_arm', 1);   // 0.1%  賦予盔甲祝福卷軸
+        if (Math.random() < 0.0001 * _dropMult) gainItem('new_item_bless_acc', 1);   // 0.01% 賦予飾品祝福卷軸
     }
 
     // === 區域額外掉落：眠龍洞穴1~3樓(zone_15/16/17) / 妖精森林周邊(zone_01) 所有怪物 ===
@@ -372,7 +370,7 @@ function killMob(idx) {
     if (AREA_BONUS_MAPS.includes(mapState.current)) {
         let bonusRate = (player.skills.includes('sk_elf_worldtree') ? 0.30 : 0.20) * _dropMult;   // 🔮 席琳的世界×3
         AREA_BONUS_ITEMS.forEach(itemId => {
-            if(DB.items[itemId] && Math.random() < Math.min(1, bonusRate)) gainItem(itemId, 1 + _mapQtyBonus);
+            if(DB.items[itemId] && Math.random() < Math.min(1, bonusRate)) gainItem(itemId, 1);
         });
     }
 

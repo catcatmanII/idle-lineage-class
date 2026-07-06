@@ -1,6 +1,7 @@
 function playerAttack() {
     let target = getTarget();
     if(!target) return;
+    if (typeof _playerMorphTrigger === 'function') { try { _playerMorphTrigger('attack'); } catch (e) {} }   // 🧝 v3.0.46 玩家變身 sprite：攻擊動作（含被迴避＝有揮擊）
     // 🔮 幻術士 奇古獸攻擊：裝備奇古獸(必中魔法)或魔劍精通(任意非弓武器套用奇古獸公式) → 走奇古獸路徑，繞過物理命中/迴避
     if (player.cls === 'illusion') {
         let _qw = player.eq.wpn ? DB.items[player.eq.wpn.id] : null;
@@ -102,25 +103,19 @@ function playerAttack() {
         if (player.buffs.sk_royal_bravewill > 0 && Math.random() < (player.mastery === 'k_royal_sword' ? 0.2 : 0.1)) result.dmg = Math.max(1, Math.floor(result.dmg * 1.5));   // 👑 勇猛意志：10%(🏅劍術精通20%)機率一般攻擊傷害×1.5
         target.curHp -= result.dmg;
         if (result.dmg > 0) { try { playMobHurt(target); } catch(e){} }   // 🔊 音效：怪物受傷（依怪名對應；全域節流）
-        if (result.dmg > 0 && target._reflectPhys && target.curHp > 0) { let _rfd = Math.max(1, Math.floor(result.dmg * target._reflectPhys / 100)); player.hp -= _rfd; logCombat(`<span class="text-red-400">【反射物理】</span>${target.n} 反射了 ${_rfd} 點物理傷害。`, 'enemy'); if (player.hp <= 0) killPlayer(); }
-        // 一般攻擊為物理傷害，不觸發元素反射（元素反射僅由魔法技能觸發，見 castSkill 618）
         if (player._setDragonblood2 && result.dmg > 0) player.hp = Math.min(player.mhp, player.hp + Math.max(1, Math.floor(result.dmg * (player.hp < player.mhp * 0.5 ? 0.05 : 0.01))));   // 🐉 龍血2/5：造成物理傷害吸血1%（自身HP<50%→5%）
         if (wpn && wpn.vampPct && result.dmg > 0) player.hp = Math.min(player.mhp, player.hp + Math.floor(result.dmg * wpn.vampPct));   // 🐉 嗜血者鎖鏈劍：吸取一般攻擊傷害的 % 為 HP
-        // 🔧 黑暗妖精：附加劇毒疊層（命中 50%／劇毒精通 100% → 每次疊加一層，攻速愈高疊愈多）
+        // 🔧 黑暗妖精：附加劇毒（命中 50%／劇毒精通 100% 使目標中毒：每秒該次攻擊 60%／劇毒精通 200% 傷害，持續 5 秒，最多 1 層，取較高傷害並刷新持續時間）
         if (player.buffs && player.buffs.sk_dark_poison > 0 && target.curHp > 0 && Math.random() < (hasMastery('d_poison') ? 1 : 0.5)) {
             if (!target.st) target.st = newMobStatus();
-            let _pPct = hasMastery('d_poison') ? 0.2 : 0.1;
-            let _pUnit = Math.max(1, Math.floor(result.dmg * _pPct * (100 - getMobChaosResist(target)) / 100));
-            if ((target.st.poison || 0) <= 0) {
-                target.st.poison = 50; target.st.poisonTick = 10;
-                target.st.poisonStacks = 1;
+            let _pPct = hasMastery('d_poison') ? 2.0 : 0.6;   // 🔧 劇毒精通：每秒 200%；否則 60%
+            let _pUnit = Math.max(1, Math.floor(result.dmg * _pPct));
+            // 🔧 新規則：未中毒、或新傷害「高於」現有時才上毒（取代傷害並刷新5秒）；新傷害未更高則完全不更新，須等舊毒5秒跑完、敵人脫離中毒後才能再上毒
+            if ((target.st.poison || 0) <= 0 || _pUnit > (target.st.poisonUnit || 0)) {
+                target.st.poison = 50; target.st.poisonTick = 10;   // 持續 5 秒、每秒一次
+                target.st.poisonStacks = 1;                          // 中毒最多 1 層
                 target.st.poisonUnit = _pUnit;
                 target.st.poisonDmg = _pUnit;
-            } else {
-                target.st.poison = 50;
-                target.st.poisonStacks = (target.st.poisonStacks || 0) + 1;
-                target.st.poisonUnit = Math.max(target.st.poisonUnit || 0, _pUnit);
-                target.st.poisonDmg = target.st.poisonUnit * target.st.poisonStacks;
             }
         }
         target.justHit = getWpnEle(player.eq.wpn, wpn);
@@ -440,7 +435,7 @@ function procFreeMagicSkill(t, skId, en) {
     });
     total = Math.floor(total * enhanceWpnFinalMult(en, player.eq.wpn && DB.items[player.eq.wpn.id]));   // 🔧 武器強化 +11~+20：最終傷害倍率（取代舊 (1+強化/20)）
     if (total > 0) {
-        t.curHp -= total; t.justHit = (sk.ele && sk.ele !== 'none') ? sk.ele : 'magic'; mobWake(t);
+        t.curHp -= total; t.justHit = (sk.ele && sk.ele !== 'none') ? sk.ele : 'magic'; t._spellHurt = true; mobWake(t);   // 🎬 v3.0.14 法術傷害→hurt(含頭目)
         if(typeof playSpellFx === 'function') { try { playSpellFx(sk.n, t); } catch(e){} }   // ⚡ v2.7.16 娃娃/寵物免費施放(如娃娃克特/聖伯納→極道落雷)也疊法術特效
         if (t.st && t.st.mrhalf > 0) t.st.mrhalf = 0;
         logCombat(`<span class="font-bold" style="color:#93c5fd;text-shadow:0 0 6px #2563eb;">【${sk.n}】</span>額外施放，對 <span class="${getMobColor(t.lv)}">${t.n}</span> 造成 <span class="${isCrit ? 'text-yellow-500 font-bold' : 'text-cyan-300'}">${total}</span> 點傷害${isCrit ? '（爆擊!）' : ''}。`, 'player-special');
@@ -530,6 +525,7 @@ function _procWeaponSpellHit(t, sp, en) {
     d = illusionMagicDmg(d, true);   // 🔮 幻覺2/5回MP＋5/5：武器附魔施放魔傷二次傷害
     t.curHp -= d;
     t.justHit = (sp.ele && sp.ele !== 'none') ? sp.ele : 'magic';
+    t._spellHurt = true;   // 🎬 v3.0.14 法術傷害→hurt(含頭目)
     mobWake(t);
     if(typeof playSpellFx === 'function') { try { playSpellFx(sp.skn, t); } catch(e){} }   // ⚡ v2.7.16 武器附魔施放(如克特之劍→極道落雷 15% proc)也疊法術特效
     if (sp.heal && d > 0) { player.hp = Math.min(player.mhp, player.hp + Math.floor(d * sp.heal)); }   // 🐉 寒冰鎖鏈劍·冰之地裂術：恢復造成傷害的指定比例 HP
@@ -576,7 +572,7 @@ function laiaWandHitProc(t) {
     d = Math.max(1, Math.floor(d * enhanceWpnFinalMult(en, w)));   // 🔧 武器強化 +11~+20：最終傷害倍率（取代舊 (1+強化/10)）
     d = Math.max(1, Math.floor(d * rlFuryMult()));   // 🔮 紅獅5/5＋😡狂怒5/5 最終傷害
     if (t.st && t.st.mrhalf > 0) t.st.mrhalf = 0;
-    t.curHp -= d; t.justHit = sp.ele; mobWake(t);
+    t.curHp -= d; t.justHit = sp.ele; t._spellHurt = true; mobWake(t);   // 🎬 v3.0.14 法術傷害→hurt(含頭目)
     if(typeof playSpellFx === 'function') { try { playSpellFx(sp.skn || '冰裂術', t); } catch(e){} }   // ⚡ v2.7.16 蕾雅魔杖命中觸發也疊法術特效（未註冊者自動略過）
     logCombat(`<span class="font-bold" style="color:#93c5fd;text-shadow:0 0 6px #2563eb;">【${sp.skn || '冰裂術'}】</span>對 <span class="${getMobColor(t.lv)}">${t.n}</span> 造成 ${d} 點水屬性魔法傷害${wasFrozen ? '（冰碎!）' : ''}。`, 'player-special');
     if (t.curHp <= 0) { let ri = mapState.mobs.findIndex(x => x && x.uid === t.uid); if (ri !== -1) killMob(ri); return; }
@@ -667,7 +663,7 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
     let st = mob.st || newMobStatus();
     if (st.terror > 0 && !_asleep && Math.random() < 0.90) { logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 陷入恐懼，攻擊落空。`, 'miss'); return; }   // 🐉 恐懼無助：90% 攻擊落空
     let mobHitBonus = (mob.hit || 0) - (st.blindVal || 0) - (st.weaken > 0 ? 2 : 0) - (st.disease > 0 ? 4 : 0) + ((mob._siegeHitEnd > state.ticks) ? 2 : 0) + tamerAuraHit(mob);   // 暴風神射：額外命中+2；🔧 馴獸光環
-    let rawHitValue = mob.lv + mobHitBonus - player.lv + (player.d.ac - (player._sufDefDown || 0));
+    let rawHitValue = mob.lv + mobHitBonus - player.lv + player.d.ac;
     let hitValue = stretchHitValue(rawHitValue);
     
     let rollHit = roll(1, 20);
@@ -691,29 +687,19 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
         if (mob._sherine) totalDmg = Math.floor(totalDmg * (mob._sherineMad ? 3 : 2));   // 🔮 席琳的世界：怪物一般攻擊傷害 ×2（瘋狂×3）
         if (mob._grace) totalDmg = Math.floor(totalDmg * 1.5);   // 🔮 席琳的恩賜：再 ×1.5
 
-        let _resFireE = player.d.resFire || 0, _resWaterE = player.d.resWater || 0, _resEarthE = player.d.resEarth || 0, _resWindE = player.d.resWind || 0;
-        if (player._sufResistCap != null) { _resFireE = Math.min(_resFireE, player._sufResistCap); _resWaterE = Math.min(_resWaterE, player._sufResistCap); _resEarthE = Math.min(_resEarthE, player._sufResistCap); _resWindE = Math.min(_resWindE, player._sufResistCap); }
-        if (player._sufEleWeakness != null) { _resFireE = Math.max(0, _resFireE - player._sufEleWeakness); _resWaterE = Math.max(0, _resWaterE - player._sufEleWeakness); _resEarthE = Math.max(0, _resEarthE - player._sufEleWeakness); _resWindE = Math.max(0, _resWindE - player._sufEleWeakness); }
         let resFactor = 1.0;
-        if(mob.e === 'fire' && _resFireE) resFactor -= effResistPct(_resFireE)/100;
-        if(mob.e === 'water' && _resWaterE) resFactor -= effResistPct(_resWaterE)/100;
-        if(mob.e === 'earth' && _resEarthE) resFactor -= effResistPct(_resEarthE)/100;
-        if(mob.e === 'wind' && _resWindE) resFactor -= effResistPct(_resWindE)/100;
+        if(mob.e === 'fire' && player.d.resFire) resFactor -= effResistPct(player.d.resFire)/100;
+        if(mob.e === 'water' && player.d.resWater) resFactor -= effResistPct(player.d.resWater)/100;
+        if(mob.e === 'earth' && player.d.resEarth) resFactor -= effResistPct(player.d.resEarth)/100;
+        if(mob.e === 'wind' && player.d.resWind) resFactor -= effResistPct(player.d.resWind)/100;
+
         resFactor = Math.max(0, Math.min(1, resFactor));
         totalDmg = Math.floor(totalDmg * resFactor);
-        // 🗺️ 地圖詞綴前墜：額外元素傷害（先乘抗性後加，確保元素傷也受抗性折減）
-        if (mob._modEleDmg) totalDmg += Math.floor(totalDmg * mob._modEleDmg / 100);
-        // 🗺️ 地圖詞綴前墜：額外混沌傷害（無視屬性抗性）
-        if (mob._modChaosDmg) totalDmg += Math.floor(totalDmg * mob._modChaosDmg / 100);
-        // 🗺️ 地圖詞綴：感電地面（受傷增加）
-        if (player._shockTakenMult) totalDmg = Math.floor(totalDmg * player._shockTakenMult);
-        // 🗺️ 地圖詞綴：頭目狂化（傷害倍率）
-        if (mob._bossRageDmg) totalDmg = Math.floor(totalDmg * mob._bossRageDmg);
 
         // 隨機減免：騎士 (10-AC)/2；妖精/黑暗妖精/龍騎士/戰士 (10-AC)/3；幻術士 (10-AC)/4；王族/法師等 (10-AC)/5
         // 🔧 v2.6.64：取值範圍由「0 ~ (10-AC)/Y」改為「(10-AC)/3Y ~ (10-AC)/Y」（下限=上限的1/3）
         let rndDrMax = 0;
-        let acGap = Math.max(0, 10 - (player.d.ac - (player._sufDefDown || 0)));
+        let acGap = Math.max(0, 10 - player.d.ac);
         if (player.cls === 'knight')         rndDrMax = Math.floor(acGap / 2);
         else if (player.cls === 'elf')       rndDrMax = Math.floor(acGap / 3);
         else if (player.cls === 'dark')      rndDrMax = Math.floor(acGap / 3);   // 🔧 黑暗妖精：(10-AC)/3（同妖精）
@@ -764,11 +750,6 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
             totalDmg *= 2;
             mobInsightPrefix += `<span class="text-rose-400 font-bold">【雙刀暴擊】${mob.n}的雙刀撕裂了你！</span> `;
         }
-        // 🗺️ 地圖詞綴後墜：怪物暴擊提升
-        if(mob._modCritRate && Math.random() * 100 < mob._modCritRate) {
-            totalDmg = Math.floor(totalDmg * (1 + (mob._modCritDmg || 0) / 100));
-            mobInsightPrefix += `<span class="text-rose-500 font-bold">【暴擊】${mob.n}的攻擊猛烈暴擊！</span> `;
-        }
 
         // 盾牌格檔：受到傷害減少50%。發動率＝受重擊時為盾牌格檔值（如100%盾→100%）；受非重擊一般攻擊時為其 30%（如100%盾→30%）
         let blocked = false;
@@ -784,6 +765,7 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
         totalDmg = Math.floor(totalDmg * riftDamageMult());   // 🌀 時空裂痕 30 分後每分鐘 +20% 怪物攻擊力
         totalDmg = dollDamageReduced(totalDmg);   // 🪆 魔法娃娃：受傷機率傷害減免（史巴托/巫妖）
         player.hp -= totalDmg;
+        if (totalDmg > 0 && typeof applyPlayerHitstun === 'function') applyPlayerHitstun();   // ⚔️ 天堂職業硬直：被物理直接命中→延遲下次攻擊
         if (totalDmg > 0) { try { playSfx('hurt'); } catch(e){} }   // 🔊 音效：玩家受到物理傷害
         if (player._setIron5 && totalDmg > 0 && player.hp > 0) ironGuardSweep();   // 🔮 鐵衛 5/5：受到（物理）傷害時，對全體必中反擊（每 tick 節流）
         try { vfxPlayerHit(totalDmg); } catch(e){}   // ✨ VFX：較大一擊→戰場震動＋HP條紅閃
@@ -811,7 +793,6 @@ function enemyPhysicalAttack(mob, idx, stunChance = 0, atkDmg = null, atkDb = nu
         if(heavy) atkMsg += " (重擊!)";
         if(blocked) atkMsg += ` <span class="text-cyan-300 font-bold">(格檔！減少 ${blockReduced} 點傷害)</span>`;
         logCombat(atkMsg, 'enemy');
-        if (totalDmg > 0 && player.mapModOn && mapState.modifiers && mapState.modifiers.active && (mapState.modifiers.suffixes || []).includes('hit_poison') && !player.d.immPoison) { let tier = getModifierTier(); let _poPct = MAP_MOD_SUFFIXES.hit_poison.values[tier]; let _poD = Math.max(1, Math.floor(totalDmg * _poPct / 100)); player.statuses.poison = 50; player.statuses.poisonDmg = _poD; player.statuses.poisonTick = 10; logCombat(`<span class="text-green-400">你因被擊中而中毒了！每秒受到 ${_poD} 點毒素傷害（${_poPct}% 傷害/秒）。</span>`, 'enemy'); }
         if (_asleep && player.statuses.sleep > 0) { player.statuses.sleep = 0; logCombat('<span class="text-sky-200">你從沉睡中驚醒！</span>', 'magic'); }   // 🗼 沉睡：受擊即醒
 
         if (player.hp <= 0) killPlayer();
@@ -909,17 +890,12 @@ function enemyAttackAlly(mob, ally) {
     let totalDmg = (heavy ? dc * ds : roll(dc, ds)) + ((mob.db || 0) - (st.weaken > 0 ? 4 : 0) - (st.broken > 0 ? 2 : 0) - ((st.confuse > 0 || st.panic > 0) ? 10 : 0) - (st.doom > 0 ? 20 : 0) + ((mob._siegeDmgEnd > state.ticks) ? 4 : 0));
     if (mob._sherine) totalDmg = Math.floor(totalDmg * (mob._sherineMad ? 3 : 2));
     if (mob._grace) totalDmg = Math.floor(totalDmg * 1.5);
-    let _resFireEA = d.resFire || 0, _resWaterEA = d.resWater || 0, _resEarthEA = d.resEarth || 0, _resWindEA = d.resWind || 0;
-    if (player._sufResistCap != null) { _resFireEA = Math.min(_resFireEA, player._sufResistCap); _resWaterEA = Math.min(_resWaterEA, player._sufResistCap); _resEarthEA = Math.min(_resEarthEA, player._sufResistCap); _resWindEA = Math.min(_resWindEA, player._sufResistCap); }
-    if (player._sufEleWeakness != null) { _resFireEA = Math.max(0, _resFireEA - player._sufEleWeakness); _resWaterEA = Math.max(0, _resWaterEA - player._sufEleWeakness); _resEarthEA = Math.max(0, _resEarthEA - player._sufEleWeakness); _resWindEA = Math.max(0, _resWindEA - player._sufEleWeakness); }
     let resFactor = 1.0;
-    if (mob.e === 'fire' && _resFireEA) resFactor -= effResistPct(_resFireEA) / 100;
-    if (mob.e === 'water' && _resWaterEA) resFactor -= effResistPct(_resWaterEA) / 100;
-    if (mob.e === 'earth' && _resEarthEA) resFactor -= effResistPct(_resEarthEA) / 100;
-    if (mob.e === 'wind' && _resWindEA) resFactor -= effResistPct(_resWindEA) / 100;
+    if (mob.e === 'fire' && d.resFire) resFactor -= effResistPct(d.resFire) / 100;
+    if (mob.e === 'water' && d.resWater) resFactor -= effResistPct(d.resWater) / 100;
+    if (mob.e === 'earth' && d.resEarth) resFactor -= effResistPct(d.resEarth) / 100;
+    if (mob.e === 'wind' && d.resWind) resFactor -= effResistPct(d.resWind) / 100;
     totalDmg = Math.floor(totalDmg * Math.max(0, Math.min(1, resFactor)));
-    if (mob._modEleDmg) totalDmg += Math.floor(totalDmg * mob._modEleDmg / 100);
-    if (mob._modChaosDmg) totalDmg += Math.floor(totalDmg * mob._modChaosDmg / 100);
     let acGap = Math.max(0, 10 - ((d.ac || 0) - teamAcBonus()));   // 🌿 大地的祝福：全隊 AC-7（隨機減傷上限亦提高）
     let rndDrMax = (ally.cls === 'knight') ? Math.floor(acGap / 2) : ((ally.cls === 'elf' || ally.cls === 'dark' || ally.cls === 'dragon' || ally.cls === 'warrior') ? Math.floor(acGap / 3) : (ally.cls === 'illusion' ? Math.floor(acGap / 4) : Math.floor(acGap / 5)));
     rndDrMax = Math.max(0, rndDrMax);
@@ -933,6 +909,7 @@ function enemyAttackAlly(mob, ally) {
     totalDmg = Math.max(1, Math.floor(Math.max(1, totalDmg) * riftDamageMult()));   // 🌀 裂痕加成（與玩家一致）
     totalDmg = allyDollDamageReduced(ally, totalDmg);   // 🆕 v2.6.10 #3：魔法娃娃機率減免（受物理傷害）
     ally.curHp -= totalDmg;
+    if (totalDmg > 0 && !ally._stunCycle) { ally._atkCd = (ally._atkCd || 0) + ((ally.d && ally.d.hitstun) || 0); ally._stunCycle = true; }   // ⚔️ 天堂職業硬直（傭兵·物理）：延遲下次攻擊·每週期一次
     logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 攻擊 <span class="text-sky-300 font-bold">協力·${ally._allyName}</span>，造成 ${totalDmg} 點傷害。`, 'enemy', 'enemy');
     allyReflectOnHit(ally, mob, totalDmg, false);   // 🆕 v2.6.14 #5c：受物理反射（疼痛歡愉/致命身軀/泰坦岩石）
     if (ally._setIron5 && ally.eq && ally.eq.wpn && ally._ironSweepTick !== state.ticks) { ally._ironSweepTick = state.ticks; allyIronGuardSweep(ally, '受擊'); }   // 🆕 v2.6.14 #5c：鐵衛5/5 受擊橫掃（每 tick 節流）
@@ -942,6 +919,7 @@ function enemyAttackAlly(mob, ally) {
 function killPlayer() {
     player.hp = 0;
     player.dead = true; // 保持死亡狀態，停止遊戲計時
+    // 死亡時清除所有召喚物與召喚 buff（迷魅術/造屍術/召喚屬性精靈/召喚強力屬性精靈一致處理），
     // 與復活流程同步，避免狀態殘留；復活後由自動施放重新召喚。
     player.summon = null;
     player.charmed = null;
@@ -967,9 +945,9 @@ function killPlayer() {
     }
     // 🔧 盟主祝福不再因死亡清空：只有時間到才會消失（亦不受攻城影響）
     let msg = "你的角色已經死亡。（死亡不損失經驗值。）";
-    // 🎮 經典模式：死亡損失「該等級最大經驗」的 10%（per-level 進度，最多扣到該等級 0% → 不會降等）
+    // 🎮 經典模式：死亡損失「該等級最大經驗」的 5%（v3.0.15 由 10% 調降·per-level 進度，最多扣到該等級 0% → 不會降等）
     if (player.classicMode) {
-        let _lossCap = Math.floor((getExpReq(player.lv) || 0) * 0.1);
+        let _lossCap = Math.floor((getExpReq(player.lv) || 0) * 0.05);
         let _before = player.exp;
         player.exp = Math.max(0, player.exp - _lossCap);
         msg = `你的角色已經死亡。<span class="text-red-300">（經典模式：損失了 ${_before - player.exp} 點經驗）</span>`;
@@ -1044,6 +1022,7 @@ function applyMobMagicToAlly(mob, sk, ally) {
         dmg = Math.max(1, Math.floor(Math.max(1, dmg) * riftDamageMult()));
         dmg = allyDollDamageReduced(ally, dmg);   // 🆕 v2.6.10 #3：魔法娃娃機率減免（受魔法傷害）
         ally.curHp -= dmg;
+        if (dmg > 0 && !ally._stunCycle) { ally._atkCd = (ally._atkCd || 0) + ((ally.d && ally.d.hitstun) || 0); ally._stunCycle = true; }   // ⚔️ 天堂職業硬直（傭兵·魔法）：延遲下次攻擊·每週期一次
         logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，對 ${nm} 造成 ${dmg} 點魔法傷害。`, 'enemy');
         if (sk.vamp || sk.vampFull) { let heal = sk.vampFull ? dmg : roll(sk.vamp[0], sk.vamp[1]); mob.curHp = Math.min(mob.hp, mob.curHp + heal); }
         if (sk.sec) {   // 二次狀態（比照玩家：freeze/stun/sleep/paralyze/burn/scald/bleed/poison）；🆕 v2.6.11 #4：freeze/stun/sleep/paralyze/poison 受裝備抵抗/免疫（傷害照樣結算，只擋附帶狀態）
@@ -1310,14 +1289,11 @@ function applyMobMagic(mob, sk) {
         let baseMagicDmg = roll(sk.dmg[0], sk.dmg[1]);
         let extraMagicDmg = (sk.db || 0) + (sk.dbLv ? (mob.lv || 0) * (sk.dbLvMult || 1) : 0);   // dbLv：傷害加值=怪物等級(=玩家等級)×dbLvMult(預設1)
         
-        let _resFireM = player.d.resFire || 0, _resWaterM = player.d.resWater || 0, _resEarthM = player.d.resEarth || 0, _resWindM = player.d.resWind || 0;
-        if (player._sufResistCap != null) { _resFireM = Math.min(_resFireM, player._sufResistCap); _resWaterM = Math.min(_resWaterM, player._sufResistCap); _resEarthM = Math.min(_resEarthM, player._sufResistCap); _resWindM = Math.min(_resWindM, player._sufResistCap); }
-        if (player._sufEleWeakness != null) { _resFireM = Math.max(0, _resFireM - player._sufEleWeakness); _resWaterM = Math.max(0, _resWaterM - player._sufEleWeakness); _resEarthM = Math.max(0, _resEarthM - player._sufEleWeakness); _resWindM = Math.max(0, _resWindM - player._sufEleWeakness); }
         let resFactor = 1.0;
-        if(sk.ele === 'fire' && _resFireM) resFactor -= effResistPct(_resFireM)/100;
-        if(sk.ele === 'water' && _resWaterM) resFactor -= effResistPct(_resWaterM)/100;
-        if(sk.ele === 'earth' && _resEarthM) resFactor -= effResistPct(_resEarthM)/100;
-        if(sk.ele === 'wind' && _resWindM) resFactor -= effResistPct(_resWindM)/100;
+        if(sk.ele === 'fire' && player.d.resFire) resFactor -= effResistPct(player.d.resFire)/100;
+        if(sk.ele === 'water' && player.d.resWater) resFactor -= effResistPct(player.d.resWater)/100;
+        if(sk.ele === 'earth' && player.d.resEarth) resFactor -= effResistPct(player.d.resEarth)/100;
+        if(sk.ele === 'wind' && player.d.resWind) resFactor -= effResistPct(player.d.resWind)/100;
         resFactor = Math.max(0, Math.min(1, resFactor));
         
         // 屬性抗性與魔防一律生效：有屬性者受該屬性抗性折減、所有魔法傷害受抗魔(MR)折減（alwaysHit 不再無視防禦）
@@ -1346,16 +1322,8 @@ function applyMobMagic(mob, sk) {
         dmg = Math.floor(dmg * riftDamageMult());   // 🌀 時空裂痕 30 分後每分鐘 +20% 怪物技能傷害
 
         dmg = dollDamageReduced(dmg);   // 🪆 魔法娃娃：受傷機率傷害減免（史巴托/巫妖）
-        // 🗺️ 地圖詞綴：額外元素/混沌傷害（怪物魔法攻擊）
-        if (mob._modEleDmg) dmg += Math.floor(dmg * mob._modEleDmg / 100);
-        if (mob._modChaosDmg) dmg += Math.floor(dmg * mob._modChaosDmg / 100);
-        // 🗺️ 地圖詞綴：感電地面（受傷增加）
-        if (player._shockTakenMult) dmg = Math.floor(dmg * player._shockTakenMult);
-        // 🗺️ 地圖詞綴：頭目狂化（傷害倍率）
-        if (mob._bossRageDmg) dmg = Math.floor(dmg * mob._bossRageDmg);
-        // 🗺️ 地圖詞綴：衰弱（最終傷害降低）
-        if (player._sufEnfeeble) dmg = Math.max(1, Math.floor(dmg * (100 - player._sufEnfeeble) / 100));
         player.hp -= dmg;
+        if (dmg > 0 && typeof applyPlayerHitstun === 'function') applyPlayerHitstun();   // ⚔️ 天堂職業硬直：被魔法直接命中→延遲下次攻擊
         if (dmg > 0) { try { playSfx('hurt'); } catch(e){} }   // 🔊 音效：玩家受到魔法傷害
         if (player._setIron5 && dmg > 0 && player.hp > 0) ironGuardSweep();   // 🔮 鐵衛 5/5：受到（魔法）傷害時亦觸發（每 tick 節流）
         logCombat(`<span class="${getMobColor(mob.lv)}">${mob.n}</span> 施放${sk.skn || '魔法'}，對你造成 ${dmg} 點魔法傷害。`, 'enemy');
