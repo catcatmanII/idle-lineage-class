@@ -108,4 +108,27 @@
         };
     }
 
+    // ===== 5. 覆蓋精通頁面描述 =====
+    if (typeof MASTERY_DATA !== 'undefined' && MASTERY_DATA.dark && MASTERY_DATA.dark.list) {
+        var _dp = MASTERY_DATA.dark.list.d_poison;
+        if (_dp) {
+            _dp.msg = '附加劇毒必定觸發、每秒10%傷害（精通20%）、無限疊層';
+            _dp.d = '附加劇毒觸發機率變成100%，且中毒每秒造成該次攻擊10%傷害（精通：20%）。可無限疊層，各層獨立計時5秒。';
+        }
+    }
+
+    // ===== 6. 覆蓋技能 tooltip 描述 =====
+    var _origBuildSkillTipHTML = window.buildSkillTipHTML;
+    if (typeof _origBuildSkillTipHTML === 'function') {
+        window.buildSkillTipHTML = function(sid) {
+            var html = _origBuildSkillTipHTML.apply(this, arguments);
+            if (sid === 'sk_dark_poison') {
+                var old = '一般攻擊命中 50% 機率使目標中毒：每秒該次攻擊 60% 傷害、持續 5 秒、最多 1 層（取較高傷害並刷新；劇毒精通→100%、每秒 200%）';
+                var rep = '一般攻擊命中 50% 機率使目標中毒：每秒該次攻擊 10% 傷害（精通：20%），持續 5 秒，可無限疊層（各層獨立計時）';
+                html = html.replace(old, rep);
+            }
+            return html;
+        };
+    }
+
 })();

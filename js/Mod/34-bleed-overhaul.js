@@ -45,4 +45,20 @@
         if (masteryBoost) m._bleedMastery = true;
     };
 
+    // ===== 2. 覆蓋精通頁面描述 =====
+    if (typeof MASTERY_DATA !== 'undefined') {
+        // 出血精通（黑暗妖精）
+        var _db = MASTERY_DATA.dark && MASTERY_DATA.dark.list && MASTERY_DATA.dark.list.d_bleed;
+        if (_db) {
+            _db.msg = '雙刀也能出血、160%/秒（精通210%）、1層5秒';
+            _db.d = '使用雙刀比照匕首觸發出血；出血為1層制，每秒造成觸發攻擊160%傷害，持續5秒（精通：210%/秒）；已有出血時觸發刷新持續時間。';
+        }
+        // 雙斧精通（戰士）— 戰斧投擲出血加成
+        var _kda = MASTERY_DATA.warrior && MASTERY_DATA.warrior.list && MASTERY_DATA.warrior.list.k_dualaxe;
+        if (_kda) {
+            _kda.msg = '戰斧投擲免MP、戰斧投擲出血210%/秒、雙持單手鈍器攻速+30%';
+            _kda.d = '戰斧投擲不消耗 MP；戰斧投擲觸發的出血每秒造成觸發攻擊210%傷害（精通加成）；主手與副手皆裝單手鈍器時攻擊速度+30%';
+        }
+    }
+
 })();
